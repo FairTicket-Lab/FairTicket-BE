@@ -119,12 +119,12 @@ CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 -- 테스트 데이터
 -- =============================================
 
--- 사용자
+-- 사용자 (BCrypt: password123 / admin123)
 INSERT INTO users (email, password, name, phone, role) VALUES
-    ('test1@test.com', 'password123', '테스트유저1', '010-1234-5678', 'USER'),
-    ('test2@test.com', 'password123', '테스트유저2', '010-2345-6789', 'USER'),
-    ('test3@test.com', 'password123', '테스트유저3', '010-3456-7890', 'USER'),
-    ('admin@test.com', 'admin123', '관리자', '010-0000-0000', 'ADMIN')
+    ('test1@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '테스트유저1', '010-1234-5678', 'USER'),
+    ('test2@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '테스트유저2', '010-2345-6789', 'USER'),
+    ('test3@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '테스트유저3', '010-3456-7890', 'USER'),
+    ('admin@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '관리자', '010-0000-0000', 'ADMIN')
 ON CONFLICT (email) DO NOTHING;
 
 -- 공연
