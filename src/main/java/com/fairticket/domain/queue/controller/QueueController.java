@@ -6,6 +6,7 @@ import com.fairticket.domain.queue.service.QueueService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -23,7 +24,7 @@ public class QueueController {
     @PostMapping("/{scheduleId}/enter")
     public Mono<ResponseEntity<QueueEntryResponse>> enterQueue(
             @PathVariable Long scheduleId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return queueService.enterQueue(scheduleId, userId)
                 .map(ResponseEntity::ok);
     }
@@ -35,7 +36,7 @@ public class QueueController {
     @GetMapping("/{scheduleId}/status")
     public Mono<ResponseEntity<QueueStatusResponse>> getStatus(
             @PathVariable Long scheduleId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return queueService.getQueueStatus(scheduleId, userId)
                 .map(status -> {
                     if ("READY".equals(status.getStatus())) {
@@ -54,7 +55,7 @@ public class QueueController {
     @DeleteMapping("/{scheduleId}/leave")
     public Mono<ResponseEntity<Void>> leaveQueue(
             @PathVariable Long scheduleId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return queueService.leaveQueue(scheduleId, userId)
                 .map(success -> ResponseEntity.noContent().<Void>build());
     }
@@ -66,7 +67,7 @@ public class QueueController {
     @PostMapping("/{scheduleId}/heartbeat")
     public Mono<ResponseEntity<Void>> heartbeat(
             @PathVariable Long scheduleId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return queueService.heartbeat(scheduleId, userId)
                 .map(success -> ResponseEntity.ok().<Void>build());
     }
