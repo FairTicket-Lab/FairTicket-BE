@@ -13,5 +13,4 @@ public interface PaymentRepository extends ReactiveCrudRepository<Payment, Long>
 
     Flux<Payment> findByStatus(String status);
 
-    Flux<Payment> findByUserId(Long userId);
 }

@@ -1,21 +1,20 @@
 package com.fairticket.domain.payment.service;
 
 import com.fairticket.domain.payment.entity.PaymentStatus;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import jakarta.annotation.PostConstruct;
 import java.util.Map;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PortOneClient {
 
-    private final WebClient.Builder webClientBuilder;
+    private WebClient webClient;
 
     @Value("${fairticket.portone.api-key}")
     private String apiKey;
@@ -25,13 +24,20 @@ public class PortOneClient {
 
     private static final String PORTONE_API_URL = "https://api.iamport.kr";
 
+    // ⭐ @PostConstruct로 초기화 (필드 주입 후)
+    @PostConstruct
+    public void init() {
+        this.webClient = WebClient.builder()
+                .baseUrl(PORTONE_API_URL)
+                .build();
+    }
+
     /**
      * 액세스 토큰 발급
      */
     public Mono<String> getAccessToken() {
-        return webClientBuilder.build()
-                .post()
-                .uri(PORTONE_API_URL + "/users/getToken")
+        return webClient.post()
+                .uri("/users/getToken")
                 .bodyValue(Map.of(
                         "imp_key", apiKey,
                         "imp_secret", apiSecret
@@ -51,9 +57,8 @@ public class PortOneClient {
      */
     public Mono<PaymentVerificationResult> verifyPayment(String impUid) {
         return getAccessToken()
-                .flatMap(token -> webClientBuilder.build()
-                        .get()
-                        .uri(PORTONE_API_URL + "/payments/" + impUid)
+                .flatMap(token -> webClient.get()
+                        .uri("/payments/" + impUid)
                         .header("Authorization", "Bearer " + token)
                         .retrieve()
                         .bodyToMono(Map.class)
@@ -75,9 +80,8 @@ public class PortOneClient {
      */
     public Mono<RefundResult> cancelPayment(String impUid, int amount, String reason) {
         return getAccessToken()
-                .flatMap(token -> webClientBuilder.build()
-                        .post()
-                        .uri(PORTONE_API_URL + "/payments/cancel")
+                .flatMap(token -> webClient.post()
+                        .uri("/payments/cancel")
                         .header("Authorization", "Bearer " + token)
                         .bodyValue(Map.of(
                                 "imp_uid", impUid,
