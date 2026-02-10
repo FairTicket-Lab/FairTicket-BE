@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     date_time TIMESTAMP NOT NULL,
     total_seats INT NOT NULL,
     ticket_open_at TIMESTAMP NOT NULL,
+    ticket_close_at TIMESTAMP NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'UPCOMING',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -129,12 +130,15 @@ ON CONFLICT (email) DO NOTHING;
 
 -- 공연
 INSERT INTO concerts (title, artist, venue) VALUES
-    ('2025 아이유 콘서트', '아이유', '잠실종합운동장')
+    ('2026 아이유 콘서트', '아이유', '잠실종합운동장'),
+    ('2026 블랙핑크 월드투어', 'BLACKPINK', '올림픽공원 체조경기장')
 ON CONFLICT DO NOTHING;
 
 -- 공연 회차
-INSERT INTO schedules (concert_id, date_time, total_seats, ticket_open_at, status) VALUES
-    (1, '2025-03-15 19:00:00', 1000, '2025-02-15 20:00:00', 'UPCOMING')
+INSERT INTO schedules (concert_id, date_time, total_seats, ticket_open_at, ticket_close_at, status) VALUES
+    (1, '2026-03-15 19:00:00', 1000, '2026-02-09 20:00:00', '2026-03-15 18:00:00', 'OPEN'),
+    (2, '2026-04-20 18:00:00', 1500, '2026-02-20 20:00:00', '2026-04-20 17:00:00', 'UPCOMING'),
+    (1, '2026-01-10 19:00:00', 800, '2025-12-01 20:00:00', '2026-01-10 18:00:00', 'CLOSED')
 ON CONFLICT DO NOTHING;
 
 -- 등급 설정
@@ -142,5 +146,72 @@ INSERT INTO schedule_grades (schedule_id, grade, seat_count, price) VALUES
     (1, 'VIP', 100, 150000),
     (1, 'R', 200, 120000),
     (1, 'S', 300, 90000),
-    (1, 'A', 400, 60000)
+    (1, 'A', 400, 60000),
+    (2, 'VIP', 150, 200000),
+    (2, 'R', 300, 150000),
+    (2, 'S', 400, 100000),
+    (2, 'A', 650, 70000),
+    (3, 'VIP', 80, 150000),
+    (3, 'R', 150, 120000),
+    (3, 'S', 250, 90000),
+    (3, 'A', 320, 60000)
 ON CONFLICT (schedule_id, grade) DO NOTHING;
+
+-- 좌석 
+INSERT INTO seats (schedule_id, grade, seat_number, price, status) VALUES
+    (1, 'VIP', '1', 150000, 'AVAILABLE'),
+    (1, 'VIP', '2', 150000, 'HELD'),
+    (1, 'VIP', '3', 150000, 'SOLD'),
+    (1, 'VIP', '4', 150000, 'AVAILABLE'),
+    (1, 'VIP', '5', 150000, 'AVAILABLE'),
+    (1, 'VIP', '6', 150000, 'HELD'),
+    (1, 'VIP', '7', 150000, 'SOLD'),
+    (1, 'VIP', '8', 150000, 'AVAILABLE'),
+    (1, 'VIP', '9', 150000, 'AVAILABLE'),
+    (1, 'VIP', '10', 150000, 'AVAILABLE'),
+    (1, 'R', '1', 120000, 'HELD'),
+    (1, 'R', '2', 120000, 'AVAILABLE'),
+    (1, 'R', '3', 120000, 'AVAILABLE'),
+    (1, 'R', '4', 120000, 'SOLD'),
+    (1, 'R', '5', 120000, 'AVAILABLE'),
+    (1, 'R', '6', 120000, 'AVAILABLE'),
+    (1, 'R', '7', 120000, 'HELD'),
+    (1, 'R', '8', 120000, 'AVAILABLE'),
+    (1, 'R', '9', 120000, 'SOLD'),
+    (1, 'R', '10', 120000, 'AVAILABLE'),
+    (1, 'S', '1', 90000, 'AVAILABLE'),
+    (1, 'S', '2', 90000, 'SOLD'),
+    (1, 'S', '3', 90000, 'AVAILABLE'),
+    (1, 'S', '4', 90000, 'HELD'),
+    (1, 'S', '5', 90000, 'AVAILABLE'),
+    (1, 'S', '6', 90000, 'AVAILABLE'),
+    (1, 'S', '7', 90000, 'SOLD'),
+    (1, 'S', '8', 90000, 'AVAILABLE'),
+    (1, 'S', '9', 90000, 'HELD'),
+    (1, 'S', '10', 90000, 'AVAILABLE'),
+    (1, 'A', '1', 60000, 'SOLD'),
+    (1, 'A', '2', 60000, 'AVAILABLE'),
+    (1, 'A', '3', 60000, 'AVAILABLE'),
+    (1, 'A', '4', 60000, 'HELD'),
+    (1, 'A', '5', 60000, 'AVAILABLE'),
+    (1, 'A', '6', 60000, 'AVAILABLE'),
+    (1, 'A', '7', 60000, 'SOLD'),
+    (1, 'A', '8', 60000, 'AVAILABLE'),
+    (1, 'A', '9', 60000, 'AVAILABLE'),
+    (1, 'A', '10', 60000, 'HELD'),
+    (2, 'VIP', '1', 200000, 'AVAILABLE'),
+    (2, 'VIP', '2', 200000, 'HELD'),
+    (2, 'VIP', '3', 200000, 'SOLD'),
+    (2, 'R', '1', 150000, 'AVAILABLE'),
+    (2, 'R', '2', 150000, 'SOLD'),
+    (2, 'R', '3', 150000, 'HELD'),
+    (2, 'S', '1', 100000, 'AVAILABLE'),
+    (2, 'S', '2', 100000, 'HELD'),
+    (2, 'A', '1', 70000, 'SOLD'),
+    (2, 'A', '2', 70000, 'AVAILABLE'),
+    (3, 'VIP', '1', 150000, 'HELD'),
+    (3, 'VIP', '2', 150000, 'AVAILABLE'),
+    (3, 'R', '1', 120000, 'SOLD'),
+    (3, 'R', '2', 120000, 'AVAILABLE'),
+    (3, 'S', '1', 90000, 'AVAILABLE'),
+    (3, 'A', '1', 60000, 'HELD');
