@@ -28,11 +28,9 @@ public class PaymentService {
     private final ReservationRepository reservationRepository;
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
-    // private final CartTrackService cartTrackService; // TODO: B팀 작업 후 주석 해제
+    // private final CartTrackService cartTrackService; // TODO: B 작업 후 주석 해제
 
-    /**
-     * 결제 준비 (결제창 호출 전)
-     */
+    // 결제 준비 (결제창 호출 전)
     public Mono<PaymentInitResponse> initiatePayment(Long reservationId, Long userId) {
         return reservationRepository.findById(reservationId)
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.RESERVATION_NOT_FOUND)))
@@ -51,7 +49,7 @@ public class PaymentService {
 
                     return paymentRepository.save(payment)
                             .flatMap(saved -> {
-                                // 타이머 시작 (⭐ reservationId 전달)
+                                // 타이머 시작 (reservationId 전달)
                                 return timerService.startPaymentTimer(reservationId, trackType)
                                         .thenReturn(saved);
                             })
@@ -67,9 +65,7 @@ public class PaymentService {
                 });
     }
 
-    /**
-     * 결제 완료 처리 (Webhook)
-     */
+    // 결제 완료 처리 (Webhook)
     public Mono<Payment> completePayment(PaymentCompleteRequest request) {
         return paymentRepository.findByMerchantUid(request.getMerchantUid())
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)))
@@ -115,9 +111,7 @@ public class PaymentService {
                         payment.getId(), payment.getMerchantUid()));
     }
 
-    /**
-     * 환불 처리
-     */
+    // 환불 처리
     public Mono<PortOneClient.RefundResult> refundPayment(Long paymentId, String reason) {
         return paymentRepository.findById(paymentId)
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)))

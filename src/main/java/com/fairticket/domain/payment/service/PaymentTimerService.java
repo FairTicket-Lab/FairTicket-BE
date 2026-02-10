@@ -23,12 +23,7 @@ public class PaymentTimerService {
         this.redisTemplate = redisTemplate;
     }
 
-    /**
-     * 결제 타이머 시작
-     * 장바구니: 5분, 당일: 10분
-     *
-     * ⭐ Key: payment-timer:{reservationId} (paymentId 아님!)
-     */
+    // 결제 타이머 시작
     public Mono<Void> startPaymentTimer(Long reservationId, TrackType trackType) {
         String timerKey = RedisKeyGenerator.paymentTimer(reservationId);
         Duration ttl = trackType == TrackType.CART
@@ -42,9 +37,7 @@ public class PaymentTimerService {
                 .then();
     }
 
-    /**
-     * 결제 타이머 취소 (결제 완료 시)
-     */
+    // 결제 타이머 취소 (결제 완료 시)
     public Mono<Boolean> cancelPaymentTimer(Long reservationId) {
         String timerKey = RedisKeyGenerator.paymentTimer(reservationId);
         return redisTemplate.delete(timerKey)
@@ -52,9 +45,7 @@ public class PaymentTimerService {
                 .doOnSuccess(success -> log.info("결제 타이머 취소: reservationId={}", reservationId));
     }
 
-    /**
-     * 남은 시간 조회 (초 단위)
-     */
+    // 남은 시간 조회 (초 단위)
     public Mono<Long> getRemainingTime(Long reservationId) {
         String timerKey = RedisKeyGenerator.paymentTimer(reservationId);
         return redisTemplate.getExpire(timerKey)

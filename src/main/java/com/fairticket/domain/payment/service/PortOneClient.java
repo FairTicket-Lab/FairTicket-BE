@@ -22,19 +22,23 @@ public class PortOneClient {
     @Value("${fairticket.portone.api-secret}")
     private String apiSecret;
 
+    @Value("${fairticket.portone.test-mode:true}")
+    private boolean testMode;
+
     private static final String PORTONE_API_URL = "https://api.iamport.kr";
 
-    // ⭐ @PostConstruct로 초기화 (필드 주입 후)
     @PostConstruct
     public void init() {
         this.webClient = WebClient.builder()
                 .baseUrl(PORTONE_API_URL)
                 .build();
+
+        if (testMode) {
+            log.warn("PortOne 테스트 모드로 실행 중입니다.");
+        }
     }
 
-    /**
-     * 액세스 토큰 발급
-     */
+    // 액세스 토큰 발급
     public Mono<String> getAccessToken() {
         return webClient.post()
                 .uri("/users/getToken")
@@ -52,9 +56,7 @@ public class PortOneClient {
                 .doOnError(error -> log.error("PortOne 토큰 발급 실패", error));
     }
 
-    /**
-     * 결제 검증
-     */
+    // 결제 검증
     public Mono<PaymentVerificationResult> verifyPayment(String impUid) {
         return getAccessToken()
                 .flatMap(token -> webClient.get()
@@ -75,9 +77,7 @@ public class PortOneClient {
                         impUid, result.getStatus()));
     }
 
-    /**
-     * 결제 취소 (환불)
-     */
+    // 결제 취소 (환불)
     public Mono<RefundResult> cancelPayment(String impUid, int amount, String reason) {
         return getAccessToken()
                 .flatMap(token -> webClient.post()
