@@ -1,5 +1,5 @@
 -- =============================================
--- FairTicket ERD v4.0
+-- FairTicket ERD v3.1
 -- =============================================
 
 -- 사용자
@@ -139,12 +139,12 @@ CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 -- 테스트 데이터
 -- =============================================
 
--- 사용자 (BCrypt: password123 / admin123)
+-- 사용자
 INSERT INTO users (email, password, name, phone, role) VALUES
-    ('test1@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '테스트유저1', '010-1234-5678', 'USER'),
-    ('test2@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '테스트유저2', '010-2345-6789', 'USER'),
-    ('test3@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '테스트유저3', '010-3456-7890', 'USER'),
-    ('admin@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '관리자', '010-0000-0000', 'ADMIN')
+    ('test1@test.com', 'password123', '테스트유저1', '010-1234-5678', 'USER'),
+    ('test2@test.com', 'password123', '테스트유저2', '010-2345-6789', 'USER'),
+    ('test3@test.com', 'password123', '테스트유저3', '010-3456-7890', 'USER'),
+    ('admin@test.com', 'admin123', '관리자', '010-0000-0000', 'ADMIN')
 ON CONFLICT (email) DO NOTHING;
 
 -- 공연
@@ -160,7 +160,7 @@ INSERT INTO schedules (concert_id, date_time, total_seats, ticket_open_at, ticke
     (1, '2026-01-10 19:00:00', 800, '2025-12-01 20:00:00', '2026-01-10 18:00:00', 'CLOSED')
 ON CONFLICT DO NOTHING;
 
--- 등급 설정
+-- 등급 설정 (TIMELINE: VIP, S, A)
 INSERT INTO grades (schedule_id, grade, price) VALUES
     (1, 'VIP', 120000),
     (1, 'S', 90000),
@@ -173,7 +173,7 @@ INSERT INTO grades (schedule_id, grade, price) VALUES
     (3, 'A', 60000)
 ON CONFLICT (schedule_id, grade) DO NOTHING;
 
--- 구역 설정
+-- 구역 설정 (schedule_id, zone, grade, seat_count). VIP-{A~H,3~13}, S-{1,2,14,15,27~40}, A-{24~26,41~43}
 INSERT INTO zones (schedule_id, zone, grade, seat_count) VALUES
     (1, 'A', 'VIP', 200), (1, 'B', 'VIP', 200), (1, 'C', 'VIP', 200), (1, 'D', 'VIP', 200), (1, 'E', 'VIP', 200), (1, 'F', 'VIP', 200), (1, 'G', 'VIP', 200), (1, 'H', 'VIP', 200),
     (1, '3', 'VIP', 100), (1, '4', 'VIP', 100), (1, '5', 'VIP', 100), (1, '6', 'VIP', 100), (1, '7', 'VIP', 100), (1, '8', 'VIP', 100), (1, '9', 'VIP', 100), (1, '10', 'VIP', 100), (1, '11', 'VIP', 100), (1, '12', 'VIP', 100), (1, '13', 'VIP', 100),
@@ -192,7 +192,7 @@ INSERT INTO zones (schedule_id, zone, grade, seat_count) VALUES
     (3, '24', 'A', 100), (3, '25', 'A', 100), (3, '26', 'A', 100), (3, '41', 'A', 100), (3, '42', 'A', 100), (3, '43', 'A', 100)
 ON CONFLICT (schedule_id, zone) DO NOTHING;
 
--- 좌석 (schedule_id, grade, zone, seat_number)
+-- 좌석 (schedule_id, grade, zone, seat_number). 예시: 구역 A 일부, 구역 1 일부 등
 INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status) VALUES
     (1, 'VIP', 'A', '1', 120000, 'AVAILABLE'), (1, 'VIP', 'A', '2', 120000, 'HELD'), (1, 'VIP', 'A', '3', 120000, 'SOLD'), (1, 'VIP', 'A', '4', 120000, 'AVAILABLE'), (1, 'VIP', 'A', '5', 120000, 'AVAILABLE'),
     (1, 'VIP', 'B', '1', 120000, 'AVAILABLE'), (1, 'VIP', 'B', '2', 120000, 'AVAILABLE'), (1, 'VIP', 'B', '3', 120000, 'HELD'),

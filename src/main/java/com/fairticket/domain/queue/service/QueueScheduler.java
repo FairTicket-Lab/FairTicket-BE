@@ -28,7 +28,7 @@ public class QueueScheduler {
         redisTemplate.keys("queue:*")
                 .flatMap(queueKey -> {
                     String scheduleId = queueKey.split(":")[1];
-                    String activeKey = RedisKeyGenerator.active(Long.parseLong(scheduleId));
+                    String activeKey = RedisKeyGenerator.activeKey(Long.parseLong(scheduleId));
 
                     return redisTemplate.opsForValue().get(activeKey)
                             .defaultIfEmpty("0")
@@ -69,7 +69,7 @@ public class QueueScheduler {
                     return redisTemplate.opsForZSet()
                             .range(queueKey, org.springframework.data.domain.Range.closed(0L, -1L))
                             .flatMap(userId -> {
-                                String heartbeatKey = RedisKeyGenerator.heartbeat(sid, Long.parseLong(userId));
+                                String heartbeatKey = RedisKeyGenerator.heartbeatKey(sid, Long.parseLong(userId));
 
                                 return redisTemplate.hasKey(heartbeatKey)
                                         .flatMap(hasHeartbeat -> {

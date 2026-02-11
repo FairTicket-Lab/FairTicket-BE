@@ -28,8 +28,8 @@ public class QueueService {
      * 대기열 진입
      */
     public Mono<QueueEntryResponse> enterQueue(Long scheduleId, Long userId) {
-        String queueKey = RedisKeyGenerator.queue(scheduleId);
-        String tokenKey = RedisKeyGenerator.queueToken(userId, scheduleId);
+        String queueKey = RedisKeyGenerator.queueKey(scheduleId);
+        String tokenKey = RedisKeyGenerator.tokenKey(userId, scheduleId);
 
         // 1. 토큰 존재 여부 체크 (이미 입장 처리된 유저)
         return redisTemplate.hasKey(tokenKey)
@@ -61,7 +61,7 @@ public class QueueService {
                                     // 3. 신규 진입
                                     Mono.defer(() -> {
                                         double score = System.currentTimeMillis();
-                                        String heartbeatKey = RedisKeyGenerator.heartbeat(scheduleId, userId);
+                                        String heartbeatKey = RedisKeyGenerator.heartbeatKey(scheduleId, userId);
 
                                         return redisTemplate.opsForZSet()
                                                 .add(queueKey, userId.toString(), score)
@@ -85,7 +85,7 @@ public class QueueService {
      * 대기열 상태 조회 (Polling용)
      */
     public Mono<QueueStatusResponse> getQueueStatus(Long scheduleId, Long userId) {
-        String queueKey = RedisKeyGenerator.queue(scheduleId);
+        String queueKey = RedisKeyGenerator.queueKey(scheduleId);
 
         return redisTemplate.opsForZSet()
                 .rank(queueKey, userId.toString())
@@ -117,8 +117,8 @@ public class QueueService {
      * 대기열 취소
      */
     public Mono<Boolean> leaveQueue(Long scheduleId, Long userId) {
-        String queueKey = RedisKeyGenerator.queue(scheduleId);
-        String heartbeatKey = RedisKeyGenerator.heartbeat(scheduleId, userId);
+        String queueKey = RedisKeyGenerator.queueKey(scheduleId);
+        String heartbeatKey = RedisKeyGenerator.heartbeatKey(scheduleId, userId);
 
         return redisTemplate.opsForZSet()
                 .remove(queueKey, userId.toString())
@@ -131,14 +131,14 @@ public class QueueService {
      * Heartbeat 처리
      */
     public Mono<Boolean> heartbeat(Long scheduleId, Long userId) {
-        String heartbeatKey = RedisKeyGenerator.heartbeat(scheduleId, userId);
+        String heartbeatKey = RedisKeyGenerator.heartbeatKey(scheduleId, userId);
 
         return redisTemplate.opsForValue()
                 .set(heartbeatKey, "alive", HEARTBEAT_TTL);
     }
 
     private Mono<Long> getPosition(Long scheduleId, Long userId) {
-        String queueKey = RedisKeyGenerator.queue(scheduleId);
+        String queueKey = RedisKeyGenerator.queueKey(scheduleId);
 
         return redisTemplate.opsForZSet()
                 .rank(queueKey, userId.toString())

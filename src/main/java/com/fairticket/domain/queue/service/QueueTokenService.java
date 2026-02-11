@@ -23,7 +23,7 @@ public class QueueTokenService {
      * 입장 토큰 발급
      */
     public Mono<String> issueToken(Long userId, Long scheduleId) {
-        String tokenKey = RedisKeyGenerator.queueToken(userId, scheduleId);
+        String tokenKey = RedisKeyGenerator.tokenKey(userId, scheduleId);
         String tokenValue = UUID.randomUUID().toString();
 
         return redisTemplate.opsForValue()
@@ -36,7 +36,7 @@ public class QueueTokenService {
      * 입장 토큰 검증
      */
     public Mono<Boolean> validateToken(Long userId, Long scheduleId, String token) {
-        String tokenKey = RedisKeyGenerator.queueToken(userId, scheduleId);
+        String tokenKey = RedisKeyGenerator.tokenKey(userId, scheduleId);
 
         return redisTemplate.opsForValue().get(tokenKey)
                 .map(storedToken -> storedToken.equals(token))
@@ -47,7 +47,7 @@ public class QueueTokenService {
      * 입장 토큰 삭제 (입장 완료 시)
      */
     public Mono<Boolean> consumeToken(Long userId, Long scheduleId) {
-        String tokenKey = RedisKeyGenerator.queueToken(userId, scheduleId);
+        String tokenKey = RedisKeyGenerator.tokenKey(userId, scheduleId);
 
         return redisTemplate.delete(tokenKey)
                 .map(deleted -> deleted > 0)
