@@ -26,6 +26,11 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
+# JWT
+jwt:
+  secret: fairticket-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256
+  expiration: 3600000  # 1시간 (ms)
+
 # Server
 server:
   port: 8080
