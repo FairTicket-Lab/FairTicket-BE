@@ -25,6 +25,8 @@ public class Schedule {
 
     private LocalDateTime ticketOpenAt;
 
+    private LocalDateTime ticketCloseAt;
+
     private String status;
 
     private LocalDateTime createdAt;

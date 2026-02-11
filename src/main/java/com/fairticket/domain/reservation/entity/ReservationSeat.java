@@ -21,6 +21,10 @@ public class ReservationSeat {
 
     private Long seatId;
 
+    private String zone;
+
+    private String seatNumber;
+
     private String status;
 
     private LocalDateTime assignedAt;
