@@ -1,33 +1,25 @@
-package com.fairticket.domain.seat.entity;
+package com.fairticket.domain.concert.entity;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
-import java.time.LocalDateTime;
-
-@Table("seats")
+@Table("zones")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Seat {
+public class Zone {
 
     @Id
     private Long id;
 
     private Long scheduleId;
 
-    private String grade;
-
     private String zone;
 
-    private String seatNumber;
+    private String grade;
 
-    private Integer price;
-
-    private String status;
-
-    private LocalDateTime createdAt;
+    private Integer seatCount;
 }

@@ -51,3 +51,15 @@ logging:
     root: INFO
     com.fairticket: DEBUG
     org.springframework.r2dbc: DEBUG
+
+# SpringDoc OpenAPI (Swagger)
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
+    disable-swagger-default-url: true
