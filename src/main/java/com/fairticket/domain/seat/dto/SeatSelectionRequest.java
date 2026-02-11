@@ -8,5 +8,6 @@ import lombok.Setter;
 public class SeatSelectionRequest {
     private Long scheduleId;
     private String grade;
+    private String zone;
     private String seatNumber;
 }

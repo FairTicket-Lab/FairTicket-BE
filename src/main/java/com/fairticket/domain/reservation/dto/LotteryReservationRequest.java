@@ -5,7 +5,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class CartReservationRequest {
+public class LotteryReservationRequest {
     private Long scheduleId;
     private String grade;
     private Integer quantity; 

@@ -1,6 +1,6 @@
 package com.fairticket.domain.reservation.entity;
 
 public enum TrackType {
-    CART,
+    LOTTERY,
     LIVE
 }
