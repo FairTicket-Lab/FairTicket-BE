@@ -140,12 +140,13 @@ CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 -- =============================================
 
 -- 사용자
+-- 비밀번호: test1~3 = "password", admin = "admin" (bcrypt)
 INSERT INTO users (email, password, name, phone, role) VALUES
-    ('test1@test.com', '$2a$10$dXJ3SW6G7P50lGmMQgel6uVktT9bSUuhvEWfXZ/BIi3sMqKYzAG2y', '테스트유저1', '010-1234-5678', 'USER'),
-    ('test2@test.com', '$2a$10$dXJ3SW6G7P50lGmMQgel6uVktT9bSUuhvEWfXZ/BIi3sMqKYzAG2y', '테스트유저2', '010-2345-6789', 'USER'),
-    ('test3@test.com', '$2a$10$dXJ3SW6G7P50lGmMQgel6uVktT9bSUuhvEWfXZ/BIi3sMqKYzAG2y', '테스트유저3', '010-3456-7890', 'USER'),
-    ('admin@test.com', '$2a$10$5c/reWRVIXYM255rCh5orOfA6dFc1FD2axfPSuU79CMmA9uWxhIZW', '관리자', '010-0000-0000', 'ADMIN')
-ON CONFLICT (email) DO NOTHING;
+    ('test1@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '테스트유저1', '010-1234-5678', 'USER'),
+    ('test2@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '테스트유저2', '010-2345-6789', 'USER'),
+    ('test3@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '테스트유저3', '010-3456-7890', 'USER'),
+    ('admin@test.com', '$2b$10$PBwV7jUmNIf1L7sDJJgWNe82lJclUrxVZlN8jdwf0TGE51J0THE1W', '관리자', '010-0000-0000', 'ADMIN')
+ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password;
 
 -- 공연
 INSERT INTO concerts (title, artist, venue) VALUES
@@ -201,4 +202,101 @@ INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status) VALUES
     (1, 'A', '24', '1', 60000, 'SOLD'), (1, 'A', '24', '2', 60000, 'AVAILABLE'), (1, 'A', '41', '1', 60000, 'AVAILABLE'), (1, 'A', '41', '2', 60000, 'HELD'),
     (2, 'VIP', 'A', '1', 150000, 'AVAILABLE'), (2, 'VIP', 'A', '2', 150000, 'SOLD'), (2, 'VIP', 'B', '1', 150000, 'HELD'),
     (2, 'S', '1', '1', 100000, 'AVAILABLE'), (2, 'S', '1', '2', 100000, 'SOLD'), (2, 'A', '24', '1', 70000, 'AVAILABLE'), (2, 'A', '41', '1', 70000, 'HELD'),
-    (3, 'VIP', 'A', '1', 120000, 'HELD'), (3, 'VIP', 'B', '1', 120000, 'AVAILABLE'), (3, 'S', '1', '1', 90000, 'AVAILABLE'), (3, 'A', '24', '1', 60000, 'SOLD');
+    (3, 'VIP', 'A', '1', 120000, 'HELD'), (3, 'VIP', 'B', '1', 120000, 'AVAILABLE'), (3, 'S', '1', '1', 90000, 'AVAILABLE'), (3, 'A', '24', '1', 60000, 'SOLD')
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+-- 좌석 추가 (schedule 1 — 구역별 20석으로 확장)
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'VIP', 'A', n::text, 120000, 'AVAILABLE' FROM generate_series(6, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'VIP', 'B', n::text, 120000, 'AVAILABLE' FROM generate_series(4, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'VIP', 'C', n::text, 120000, 'AVAILABLE' FROM generate_series(1, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'S', '1', n::text, 90000, 'AVAILABLE' FROM generate_series(4, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'S', '2', n::text, 90000, 'AVAILABLE' FROM generate_series(2, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'A', '24', n::text, 60000, 'AVAILABLE' FROM generate_series(3, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+SELECT 1, 'A', '41', n::text, 60000, 'AVAILABLE' FROM generate_series(3, 20) n
+ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+
+-- =============================================
+-- 테스트 트랜잭션 데이터 (예약 + 좌석배정 + 결제)
+-- =============================================
+
+-- 예약 1: user1 + schedule1, 추첨 결제완료 (PAID)
+INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at, updated_at) VALUES
+    (1, 1, 'VIP', 'LOTTERY', 'PAID', 1, '2026-02-10 10:00:00', '2026-02-10 10:05:00')
+ON CONFLICT (user_id, schedule_id) DO NOTHING;
+
+-- 예약 2: user2 + schedule1, 라이브 결제대기 (PENDING)
+INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at, updated_at) VALUES
+    (2, 1, 'S', 'LIVE', 'PENDING', 2, '2026-02-10 11:00:00', '2026-02-10 11:00:00')
+ON CONFLICT (user_id, schedule_id) DO NOTHING;
+
+-- 예약 3: user3 + schedule1, 추첨 대기중 (PAID_PENDING_SEAT)
+INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at, updated_at) VALUES
+    (3, 1, 'VIP', 'LOTTERY', 'PAID_PENDING_SEAT', 1, '2026-02-10 10:30:00', '2026-02-10 10:35:00')
+ON CONFLICT (user_id, schedule_id) DO NOTHING;
+
+-- 예약 4: user1 + schedule2, 추첨 취소됨 (CANCELLED)
+INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at, updated_at) VALUES
+    (1, 2, 'VIP', 'LOTTERY', 'CANCELLED', 1, '2026-02-20 20:00:00', '2026-02-20 20:30:00')
+ON CONFLICT (user_id, schedule_id) DO NOTHING;
+
+-- 예약-좌석: 예약1 (user1 VIP A-4 배정완료)
+INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, assigned_at, created_at)
+SELECT 1, s.id, 'A', '4', 'ASSIGNED', '2026-02-10 10:05:00', '2026-02-10 10:00:00'
+FROM seats s WHERE s.schedule_id = 1 AND s.zone = 'A' AND s.seat_number = '4'
+ON CONFLICT DO NOTHING;
+
+-- 예약-좌석: 예약2 (user2 S 1-4, 1-5 대기중)
+INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, created_at)
+SELECT 2, s.id, '1', '4', 'PENDING', '2026-02-10 11:00:00'
+FROM seats s WHERE s.schedule_id = 1 AND s.zone = '1' AND s.seat_number = '4'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, created_at)
+SELECT 2, s.id, '1', '5', 'PENDING', '2026-02-10 11:00:00'
+FROM seats s WHERE s.schedule_id = 1 AND s.zone = '1' AND s.seat_number = '5'
+ON CONFLICT DO NOTHING;
+
+-- 예약-좌석: 예약3 (user3 VIP B-1 대기중)
+INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, created_at)
+SELECT 3, s.id, 'B', '1', 'PENDING', '2026-02-10 10:30:00'
+FROM seats s WHERE s.schedule_id = 1 AND s.zone = 'B' AND s.seat_number = '1'
+ON CONFLICT DO NOTHING;
+
+-- 결제 1: 예약1 결제완료 (COMPLETED)
+INSERT INTO payments (reservation_id, merchant_uid, imp_uid, amount, status, paid_at, created_at, updated_at) VALUES
+    (1, 'FAIR_1707500000_test0001', 'imp_test_0001', 120000, 'COMPLETED', '2026-02-10 10:05:00', '2026-02-10 10:00:00', '2026-02-10 10:05:00')
+ON CONFLICT (merchant_uid) DO NOTHING;
+
+-- 결제 2: 예약2 결제대기 (PENDING) — imp_uid 미발급 상태
+INSERT INTO payments (reservation_id, merchant_uid, amount, status, created_at, updated_at) VALUES
+    (2, 'FAIR_1707500000_test0002', 180000, 'PENDING', '2026-02-10 11:00:00', '2026-02-10 11:00:00')
+ON CONFLICT (merchant_uid) DO NOTHING;
+
+-- 결제 3: 예약3 결제완료 (COMPLETED, 좌석 배정 대기중)
+INSERT INTO payments (reservation_id, merchant_uid, imp_uid, amount, status, paid_at, created_at, updated_at) VALUES
+    (3, 'FAIR_1707500000_test0003', 'imp_test_0003', 120000, 'COMPLETED', '2026-02-10 10:35:00', '2026-02-10 10:30:00', '2026-02-10 10:35:00')
+ON CONFLICT (merchant_uid) DO NOTHING;
+
+-- 좌석 상태 동기화: 예약된 좌석 SOLD 처리
+UPDATE seats SET status = 'SOLD' WHERE schedule_id = 1 AND zone = 'A' AND seat_number = '4' AND status != 'SOLD';
+UPDATE seats SET status = 'HELD' WHERE schedule_id = 1 AND zone = '1' AND seat_number IN ('4','5') AND status = 'AVAILABLE';
+UPDATE seats SET status = 'HELD' WHERE schedule_id = 1 AND zone = 'B' AND seat_number = '1' AND status = 'AVAILABLE';
