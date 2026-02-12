@@ -141,10 +141,10 @@ CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 
 -- 사용자
 INSERT INTO users (email, password, name, phone, role) VALUES
-    ('test1@test.com', 'password123', '테스트유저1', '010-1234-5678', 'USER'),
-    ('test2@test.com', 'password123', '테스트유저2', '010-2345-6789', 'USER'),
-    ('test3@test.com', 'password123', '테스트유저3', '010-3456-7890', 'USER'),
-    ('admin@test.com', 'admin123', '관리자', '010-0000-0000', 'ADMIN')
+    ('test1@test.com', '$2a$10$dXJ3SW6G7P50lGmMQgel6uVktT9bSUuhvEWfXZ/BIi3sMqKYzAG2y', '테스트유저1', '010-1234-5678', 'USER'),
+    ('test2@test.com', '$2a$10$dXJ3SW6G7P50lGmMQgel6uVktT9bSUuhvEWfXZ/BIi3sMqKYzAG2y', '테스트유저2', '010-2345-6789', 'USER'),
+    ('test3@test.com', '$2a$10$dXJ3SW6G7P50lGmMQgel6uVktT9bSUuhvEWfXZ/BIi3sMqKYzAG2y', '테스트유저3', '010-3456-7890', 'USER'),
+    ('admin@test.com', '$2a$10$5c/reWRVIXYM255rCh5orOfA6dFc1FD2axfPSuU79CMmA9uWxhIZW', '관리자', '010-0000-0000', 'ADMIN')
 ON CONFLICT (email) DO NOTHING;
 
 -- 공연
@@ -154,10 +154,11 @@ INSERT INTO concerts (title, artist, venue) VALUES
 ON CONFLICT DO NOTHING;
 
 -- 공연 회차
+-- total_seats = zones 합산: VIP(8×200+11×100=2700) + S(4×100+14×100=1800) + A(6×100=600) = 5100
 INSERT INTO schedules (concert_id, date_time, total_seats, ticket_open_at, ticket_close_at, status) VALUES
-    (1, '2026-03-15 19:00:00', 1000, '2026-02-09 20:00:00', '2026-03-15 18:00:00', 'OPEN'),
-    (2, '2026-04-20 18:00:00', 1500, '2026-02-20 20:00:00', '2026-04-20 17:00:00', 'UPCOMING'),
-    (1, '2026-01-10 19:00:00', 800, '2025-12-01 20:00:00', '2026-01-10 18:00:00', 'CLOSED')
+    (1, '2026-03-15 19:00:00', 5100, '2026-02-09 20:00:00', '2026-03-15 18:00:00', 'OPEN'),
+    (2, '2026-04-20 18:00:00', 5100, '2026-02-20 20:00:00', '2026-04-20 17:00:00', 'UPCOMING'),
+    (1, '2026-01-10 19:00:00', 5100, '2025-12-01 20:00:00', '2026-01-10 18:00:00', 'CLOSED')
 ON CONFLICT DO NOTHING;
 
 -- 등급 설정 (TIMELINE: VIP, S, A)

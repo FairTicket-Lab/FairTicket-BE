@@ -1,5 +1,6 @@
 package com.fairticket.domain.queue.service;
 
+import com.fairticket.domain.queue.config.QueueProperties;
 import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,8 +17,7 @@ import java.util.UUID;
 public class QueueTokenService {
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
-
-    private static final Duration TOKEN_TTL = Duration.ofSeconds(300);
+    private final QueueProperties queueProperties;
 
     /**
      * 입장 토큰 발급
@@ -25,9 +25,10 @@ public class QueueTokenService {
     public Mono<String> issueToken(Long userId, Long scheduleId) {
         String tokenKey = RedisKeyGenerator.tokenKey(userId, scheduleId);
         String tokenValue = UUID.randomUUID().toString();
+        Duration tokenTtl = Duration.ofSeconds(queueProperties.getTokenTtlSeconds());
 
         return redisTemplate.opsForValue()
-                .set(tokenKey, tokenValue, TOKEN_TTL)
+                .set(tokenKey, tokenValue, tokenTtl)
                 .thenReturn(tokenValue)
                 .doOnSuccess(token -> log.info("입장 토큰 발급: userId={}, scheduleId={}", userId, scheduleId));
     }

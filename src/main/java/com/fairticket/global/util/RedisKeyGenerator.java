@@ -68,4 +68,14 @@ public class RedisKeyGenerator {
     public static String lotteryAssignedKey(Long scheduleId) {
         return String.format("lottery-assigned:%d", scheduleId);
     }
+
+    // 활성 스케줄 목록 (KEYS 명령어 대체) - active-schedules
+    public static String activeSchedulesKey() {
+        return "active-schedules";
+    }
+
+    // JWT 블랙리스트 키 (로그아웃 시 토큰 무효화) - blacklist:{token}
+    public static String blacklistKey(String token) {
+        return "blacklist:" + token;
+    }
 }
