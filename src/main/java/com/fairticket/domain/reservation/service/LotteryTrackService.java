@@ -22,6 +22,7 @@ import com.fairticket.domain.seat.entity.SeatStatus;
 import com.fairticket.domain.seat.repository.SeatRepository;
 import com.fairticket.domain.seat.service.SeatPoolService;
 import com.fairticket.domain.reservation.constants.ReservationConstants;
+import com.fairticket.domain.queue.service.QueueTokenService;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
 import com.fairticket.global.util.RedisKeyGenerator;
@@ -53,13 +54,22 @@ public class LotteryTrackService {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final SeatPoolService seatPoolService;
     private final SeatRepository seatRepository;
+    private final QueueTokenService queueTokenService;
 
     // 추첨 트랙 1인당 최대 수량 등은 {@link ReservationConstants} 사용
 
     // 추첨 트랙 예매 요청
-    public Mono<ReservationResponse> createLotteryReservation(LotteryReservationRequest request, Long userId) {
-        // 1. 추첨 트랙 시간대 체크 (티켓 오픈 30분 전 ~ 티켓 오픈 20분 전: 진입 가능, 20분~15분: 진입 마감·기존 예약 결제만 가능)
-        return scheduleService.findScheduleOrThrow(request.getScheduleId())
+    public Mono<ReservationResponse> createLotteryReservation(LotteryReservationRequest request, Long userId, String queueToken) {
+        // 0. 대기열 토큰 검증 + 1회성 소비
+        return queueTokenService.validateToken(userId, request.getScheduleId(), queueToken)
+                .flatMap(valid -> {
+                    if (!valid) {
+                        return Mono.<Void>error(new BusinessException(ErrorCode.INVALID_QUEUE_TOKEN));
+                    }
+                    return queueTokenService.consumeToken(userId, request.getScheduleId()).then();
+                })
+                // 1. 추첨 트랙 시간대 체크 (티켓 오픈 30분 전 ~ 티켓 오픈 20분 전: 진입 가능, 20분~15분: 진입 마감·기존 예약 결제만 가능)
+                .then(scheduleService.findScheduleOrThrow(request.getScheduleId()))
                 .flatMap(schedule -> {
                     LocalDateTime now = LocalDateTime.now();
                     LocalDateTime lotteryOpenAt = schedule.getTicketOpenAt().minusMinutes(ReservationConstants.LOTTERY_OPEN_MINUTES);
