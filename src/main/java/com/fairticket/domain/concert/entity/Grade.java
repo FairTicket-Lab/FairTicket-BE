@@ -4,13 +4,13 @@ import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
-@Table("schedule_grades")
+@Table("grades")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ScheduleGrade {
+public class Grade {
 
     @Id
     private Long id;
@@ -18,8 +18,6 @@ public class ScheduleGrade {
     private Long scheduleId;
 
     private String grade;
-
-    private Integer seatCount;
 
     private Integer price;
 }

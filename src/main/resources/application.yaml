@@ -26,11 +26,16 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
+# JWT (팀원 A 담당)
+jwt:
+  secret: fairticket-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256
+  expiration: 3600000 # 1시간 (ms)
+
 # Server
 server:
   port: 8080
 
-# Actuator
+# Actuator & Monitoring
 management:
   endpoints:
     web:
@@ -46,3 +51,22 @@ logging:
     root: INFO
     com.fairticket: DEBUG
     org.springframework.r2dbc: DEBUG
+
+# SpringDoc OpenAPI (Swagger)
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
+    disable-swagger-default-url: true
+
+# PortOne 결제 설정 (팀원 C 담당)
+fairticket:
+  portone:
+    api-key: ${PORTONE_API_KEY:test-api-key}
+    api-secret: ${PORTONE_API_SECRET:test-api-secret}
+    test-mode: true
