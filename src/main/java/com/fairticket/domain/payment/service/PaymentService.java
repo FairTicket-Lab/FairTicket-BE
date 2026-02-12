@@ -9,6 +9,7 @@ import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
+import com.fairticket.domain.reservation.service.LiveTrackService;
 import com.fairticket.domain.reservation.service.LotteryTrackService;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
@@ -30,6 +31,7 @@ public class PaymentService {
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
     private final LotteryTrackService lotteryTrackService;
+    private final LiveTrackService liveTrackService;
 
     // 결제 준비 (결제창 호출 전)
     public Mono<PaymentInitResponse> initiatePayment(Long reservationId, Long userId) {
@@ -97,8 +99,11 @@ public class PaymentService {
                                         reservation.getUserId(),
                                         reservation.getScheduleId()
                                 ).thenReturn(payment);
+                            } else if (TrackType.LIVE.name().equals(reservation.getTrackType())) {
+                                // 라이브 결제 완료 후속 처리: 결제 완료 시 좌석 홀드 즉시 해제
+                                return liveTrackService.releaseHoldsForReservation(payment.getReservationId())
+                                        .thenReturn(payment);
                             }
-                            // 라이브 트랙은 별도 처리 없음
                             return Mono.just(payment);
                         }))
                 .doOnSuccess(payment -> log.info("결제 완료 처리: paymentId={}, merchantUid={}",
