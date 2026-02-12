@@ -13,4 +13,6 @@ public interface PaymentRepository extends ReactiveCrudRepository<Payment, Long>
 
     Flux<Payment> findByStatus(String status);
 
+    // userId 기준 조회는 Payment→Reservation JOIN 필요
+    // → PaymentQueryRepository 사용
 }

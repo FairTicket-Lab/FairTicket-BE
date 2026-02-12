@@ -47,14 +47,17 @@ public class SeatPoolService {
 
     /**
      * 지정한 구역·좌석 번호 목록으로 Redis 풀 초기화
+     * 기존 데이터를 삭제하고 새로 초기화합니다.
      */
     public Mono<Void> initializeSeatPoolWithNumbers(Long scheduleId, String zone, List<String> seatNumbers) {
         if (seatNumbers.isEmpty()) {
             return Mono.empty();
         }
         String poolKey = RedisKeyGenerator.seatsKey(scheduleId, zone);
-        return redisTemplate.opsForSet()
-                .add(poolKey, seatNumbers.toArray(new String[0]))
+        // 기존 키 삭제 후 새로 추가
+        return redisTemplate.delete(poolKey)
+                .then(redisTemplate.opsForSet()
+                        .add(poolKey, seatNumbers.toArray(new String[0])))
                 .doOnSuccess(c -> log.info("좌석 풀 초기화: scheduleId={}, zone={}, count={}", 
                         scheduleId, zone, seatNumbers.size()))
                 .then();
