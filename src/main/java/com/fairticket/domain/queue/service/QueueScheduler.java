@@ -90,8 +90,13 @@ public class QueueScheduler {
                     try {
                         Map<String, Object> parsed = objectMapper.readValue(
                                 result, new TypeReference<Map<String, Object>>() {});
+                        // Lua cjson.encode({}) → JSON "{}" (object) → LinkedHashMap
+                        // Lua cjson.encode({"a","b"}) → JSON ["a","b"] (array) → List
+                        Object admittedRaw = parsed.get("admitted");
                         @SuppressWarnings("unchecked")
-                        List<String> admitted = (List<String>) parsed.get("admitted");
+                        List<String> admitted = (admittedRaw instanceof List)
+                                ? (List<String>) admittedRaw
+                                : List.of();
                         int activeCount = ((Number) parsed.get("activeCount")).intValue();
                         int queueSize = ((Number) parsed.get("queueSize")).intValue();
 
