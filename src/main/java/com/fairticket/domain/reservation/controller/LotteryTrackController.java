@@ -21,8 +21,9 @@ public class LotteryTrackController {
     @PostMapping("/{scheduleId}")
     public Mono<ResponseEntity<ReservationResponse>> createReservation(
             @RequestBody LotteryReservationRequest request,
-            @RequestHeader("X-User-Id") Long userId) {
-        return lotteryTrackService.createLotteryReservation(request, userId)
+            @RequestHeader("X-User-Id") Long userId,
+            @RequestHeader("X-Queue-Token") String queueToken) {
+        return lotteryTrackService.createLotteryReservation(request, userId, queueToken)
                 .map(ResponseEntity::ok);
     }
 
