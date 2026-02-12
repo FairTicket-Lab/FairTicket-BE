@@ -62,9 +62,7 @@ public class RedisKeyExpiredListener {
                                                     }
                                                     return paymentRepository.save(payment);
                                                 })
-                                                // 라이브 트랙인 경우 좌석 반환은 ReservationSeat 기반으로
-                                                // LiveHoldExpiryScheduler 또는 releaseHoldsForReservation에서 처리
-                                                .then(reactor.core.publisher.Mono.empty())
+                                                .then(restoreSeat(savedReservation))
                                 );
                     })
                     .doOnSuccess(v -> log.info("결제 타임아웃 처리 완료: reservationId={}", reservationId))
@@ -98,5 +96,28 @@ public class RedisKeyExpiredListener {
         } catch (Exception e) {
             log.error("좌석 홀드 만료 처리 중 오류: key={}", key, e);
         }
+    }
+
+    // 좌석 반환 (라이브 트랙만 — 좌석 번호가 있는 경우)
+    private reactor.core.publisher.Mono<Void> restoreSeat(
+            com.fairticket.domain.reservation.entity.Reservation reservation) {
+
+        if ("LIVE".equals(reservation.getTrackType()) // &&
+               // reservation.getSeatNumbers() != null
+        ){
+
+            log.info("좌석 반환 시작: schedule={}, grade={}, seats={}",
+                    reservation.getScheduleId(),
+                    reservation.getGrade()
+                   // reservation.getSeatNumbers()
+                );
+
+            // seatNumbers는 단일 좌석 번호 또는 쉼표 구분 목록
+            // 개별 좌석 반환은 ReservationSeat 기반으로 처리해야 하지만,
+            // 여기서는 간단 반환 (zone 정보가 없으므로 grade로 대체 불가 - 추후 개선 필요)
+            return reactor.core.publisher.Mono.empty();
+        }
+
+        return reactor.core.publisher.Mono.empty();
     }
 }
