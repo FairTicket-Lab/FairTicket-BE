@@ -100,8 +100,20 @@ public class QueueScheduler {
                                     scheduleId, admitted.size(), activeCount, queueSize);
                         }
 
+                        // 큐와 active 모두 비었으면 active-schedules에서 제거
+                        if (queueSize == 0 && activeCount == 0) {
+                            return redisTemplate.opsForSet()
+                                    .remove(RedisKeyGenerator.activeSchedulesKey(), scheduleIdStr)
+                                    .doOnSuccess(v -> log.info("빈 스케줄 정리: scheduleId={}", scheduleId))
+                                    .then();
+                        }
+
                         return Flux.fromIterable(admitted)
-                                .flatMap(userId -> queueTokenService.issueToken(Long.parseLong(userId), scheduleId))
+                                .flatMap(userId -> queueTokenService.issueToken(Long.parseLong(userId), scheduleId)
+                                        .onErrorResume(e -> {
+                                            log.warn("토큰 발급 실패: userId={}, scheduleId={}", userId, scheduleId, e);
+                                            return Mono.empty();
+                                        }))
                                 .then();
                     } catch (Exception e) {
                         log.error("Lua Script 결과 파싱 실패: scheduleId={}", scheduleId, e);

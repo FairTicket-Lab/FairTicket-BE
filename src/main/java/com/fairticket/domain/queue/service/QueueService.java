@@ -8,11 +8,15 @@ import com.fairticket.global.exception.ErrorCode;
 import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -22,6 +26,13 @@ public class QueueService {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final QueueTokenService queueTokenService;
     private final QueueProperties queueProperties;
+
+    private RedisScript<Long> queueEnterScript;
+
+    @PostConstruct
+    public void init() {
+        queueEnterScript = RedisScript.of(new ClassPathResource("scripts/queue_enter.lua"), Long.class);
+    }
 
     /**
      * 대기열 진입
@@ -56,22 +67,27 @@ public class QueueService {
                             })
                             .switchIfEmpty(
                                     Mono.defer(() -> {
-                                        // 큐 크기 상한 체크
-                                        return redisTemplate.opsForZSet().size(queueKey)
-                                                .defaultIfEmpty(0L)
-                                                .flatMap(queueSize -> {
-                                                    if (queueSize >= queueProperties.getMaxQueueSize()) {
+                                        double score = System.currentTimeMillis();
+
+                                        // Lua Script로 큐 크기 체크 + 진입 원자적 처리
+                                        return redisTemplate.execute(
+                                                        queueEnterScript,
+                                                        List.of(queueKey),
+                                                        List.of(
+                                                                String.valueOf(queueProperties.getMaxQueueSize()),
+                                                                userId.toString(),
+                                                                String.valueOf((long) score)
+                                                        ))
+                                                .next()
+                                                .flatMap(result -> {
+                                                    if (result == 0L) {
                                                         return Mono.error(new BusinessException(ErrorCode.QUEUE_FULL));
                                                     }
 
-                                                    double score = System.currentTimeMillis();
                                                     String heartbeatKey = RedisKeyGenerator.heartbeatKey(scheduleId, userId);
                                                     Duration heartbeatTtl = Duration.ofSeconds(queueProperties.getHeartbeatTtlSeconds());
 
-                                                    return redisTemplate.opsForZSet()
-                                                            .add(queueKey, userId.toString(), score)
-                                                            .then(redisTemplate.opsForValue().set(heartbeatKey, "alive", heartbeatTtl))
-                                                            // 스케줄을 active-schedules에 등록 (KEYS 대체)
+                                                    return redisTemplate.opsForValue().set(heartbeatKey, "alive", heartbeatTtl)
                                                             .then(redisTemplate.opsForSet().add(RedisKeyGenerator.activeSchedulesKey(), scheduleId.toString()))
                                                             .then(getPosition(scheduleId, userId))
                                                             .map(position -> QueueEntryResponse.builder()
@@ -97,7 +113,6 @@ public class QueueService {
         String tokenKey = RedisKeyGenerator.tokenKey(userId, scheduleId);
         String queueKey = RedisKeyGenerator.queueKey(scheduleId);
 
-        // 1. 토큰 보유 여부 확인 (이미 입장 처리된 경우)
         return redisTemplate.opsForValue().get(tokenKey)
                 .flatMap(token -> Mono.just(QueueStatusResponse.builder()
                         .position(0L)
@@ -107,7 +122,6 @@ public class QueueService {
                         .message("입장 가능합니다")
                         .build()))
                 .switchIfEmpty(
-                        // 2. 큐 위치 조회
                         redisTemplate.opsForZSet()
                                 .rank(queueKey, userId.toString())
                                 .map(rank -> rank + 1)
@@ -150,11 +164,9 @@ public class QueueService {
         Duration heartbeatTtl = Duration.ofSeconds(queueProperties.getHeartbeatTtlSeconds());
         double now = System.currentTimeMillis();
 
-        // 큐 heartbeat 키 갱신
         Mono<Boolean> updateHeartbeat = redisTemplate.opsForValue()
                 .set(heartbeatKey, "alive", heartbeatTtl);
 
-        // active SortedSet에 존재하면 score 갱신 (XX 동작)
         Mono<Boolean> updateActive = redisTemplate.opsForZSet()
                 .score(activeKey, userId.toString())
                 .flatMap(existingScore ->

@@ -17,4 +17,6 @@ public class QueueProperties {
     private int heartbeatTtlSeconds = 30;
     private int tokenTtlSeconds = 300;
     private int activeTimeoutSeconds = 60;
+    private int schedulerIntervalMs = 5000;
+    private int cleanupIntervalMs = 10000;
 }

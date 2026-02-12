@@ -32,7 +32,7 @@ local toAdmit = math.min(available, batchSize)
 local candidates = redis.call('ZRANGE', queueKey, 0, toAdmit - 1)
 
 if #candidates == 0 then
-    return cjson.encode({admitted = {}, activeCount = currentActive, queueSize = 0})
+    return cjson.encode({admitted = {}, activeCount = currentActive, queueSize = redis.call('ZCARD', queueKey)})
 end
 
 -- 5. 큐 → active 이동 (원자적)
