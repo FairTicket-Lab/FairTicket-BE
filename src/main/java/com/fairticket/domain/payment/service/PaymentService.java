@@ -1,21 +1,22 @@
 package com.fairticket.domain.payment.service;
 
-import com.fairticket.domain.payment.dto.PaymentCompleteRequest;
 import com.fairticket.domain.payment.dto.PaymentInitResponse;
+import com.fairticket.domain.payment.dto.WebhookRequest;
 import com.fairticket.domain.payment.entity.Payment;
 import com.fairticket.domain.payment.entity.PaymentStatus;
 import com.fairticket.domain.payment.repository.PaymentRepository;
+import com.fairticket.domain.payment.repository.PaymentQueryRepository;
 import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
-import com.fairticket.domain.reservation.service.LiveTrackService;
 import com.fairticket.domain.reservation.service.LotteryTrackService;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -27,11 +28,11 @@ import java.util.UUID;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
+    private final PaymentQueryRepository paymentQueryRepository;
     private final ReservationRepository reservationRepository;
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
     private final LotteryTrackService lotteryTrackService;
-    private final LiveTrackService liveTrackService;
 
     // 결제 준비 (결제창 호출 전)
     public Mono<PaymentInitResponse> initiatePayment(Long reservationId, Long userId) {
@@ -67,11 +68,19 @@ public class PaymentService {
                 });
     }
 
-    // 결제 완료 처리 (Webhook)
-    public Mono<Payment> completePayment(PaymentCompleteRequest request) {
+    // 결제 완료 처리 - PortOne Webhook 수신
+    // 프론트엔드에서 impUid, merchantUid만 전달하면 이후 처리 자동 진행
+    public Mono<Payment> completePayment(WebhookRequest request) {
         return paymentRepository.findByMerchantUid(request.getMerchantUid())
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)))
-                // PG사 검증
+                // 이미 완료된 결제 중복 처리 방지
+                .flatMap(payment -> {
+                    if (PaymentStatus.COMPLETED.name().equals(payment.getStatus())) {
+                        return Mono.error(new BusinessException(ErrorCode.PAYMENT_ALREADY_COMPLETED));
+                    }
+                    return Mono.just(payment);
+                })
+                // PG사 금액 검증
                 .flatMap(payment -> portOneClient.verifyPayment(request.getImpUid())
                         .flatMap(verification -> {
                             if (!payment.getAmount().equals(verification.getAmount())) {
@@ -91,22 +100,16 @@ public class PaymentService {
                 .flatMap(payment -> reservationRepository.findById(payment.getReservationId())
                         .flatMap(reservation -> {
                             if (TrackType.LOTTERY.name().equals(reservation.getTrackType())) {
-                                // 추첨 결제 완료 후속 처리:
-                                // 예약 상태 PAID_PENDING_SEAT 전환 + Redis lotteryPaidKey 등록
-                                // 이전: log.info만 찍고 실제 처리 없었음
                                 return lotteryTrackService.onPaymentCompleted(
                                         payment.getReservationId(),
                                         reservation.getUserId(),
                                         reservation.getScheduleId()
                                 ).thenReturn(payment);
-                            } else if (TrackType.LIVE.name().equals(reservation.getTrackType())) {
-                                // 라이브 결제 완료 후속 처리: 결제 완료 시 좌석 홀드 즉시 해제
-                                return liveTrackService.releaseHoldsForReservation(payment.getReservationId())
-                                        .thenReturn(payment);
                             }
+                            // 라이브 트랙: 홀드 해제는 이슈 2에서 연동 예정
                             return Mono.just(payment);
                         }))
-                .doOnSuccess(payment -> log.info("결제 완료 처리: paymentId={}, merchantUid={}",
+                .doOnSuccess(payment -> log.info("결제 완료: paymentId={}, merchantUid={}",
                         payment.getId(), payment.getMerchantUid()));
     }
 
@@ -138,6 +141,11 @@ public class PaymentService {
     public Mono<Payment> getPaymentByReservationId(Long reservationId) {
         return paymentRepository.findByReservationId(reservationId)
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)));
+    }
+
+    // 내 결제 목록 조회
+    public Flux<Payment> getMyPayments(Long userId) {
+        return paymentQueryRepository.findByUserId(userId);
     }
 
     private String generateMerchantUid() {

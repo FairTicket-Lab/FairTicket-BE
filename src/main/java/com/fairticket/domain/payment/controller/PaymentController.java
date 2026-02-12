@@ -1,8 +1,8 @@
 package com.fairticket.domain.payment.controller;
 
-import com.fairticket.domain.payment.dto.PaymentCompleteRequest;
 import com.fairticket.domain.payment.dto.PaymentInitResponse;
 import com.fairticket.domain.payment.dto.PaymentTimerResponse;
+import com.fairticket.domain.payment.dto.WebhookRequest;
 import com.fairticket.domain.payment.entity.Payment;
 import com.fairticket.domain.payment.service.PaymentService;
 import com.fairticket.domain.payment.service.PaymentTimerService;
@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Tag(name = "Payment", description = "결제 API")
@@ -39,16 +40,18 @@ public class PaymentController {
     }
 
     @Operation(
-            summary = "결제 완료 처리",
-            description = "PortOne PG사를 통한 결제 완료 후 Webhook으로 호출됩니다. 결제 금액을 검증하고 예약 상태를 업데이트합니다."
+            summary = "결제 Webhook 수신",
+            description = "PortOne에서 결제 완료 후 impUid와 merchantUid를 전달합니다. " +
+                    "금액 검증 → 결제 완료 처리 → 트랙별 후속 처리까지 자동으로 진행됩니다. " +
+                    "프론트엔드는 이 API에 impUid, merchantUid만 전달하면 됩니다."
     )
-    @PostMapping("/complete")
-    public Mono<ResponseEntity<Payment>> completePayment(
+    @PostMapping("/webhook")
+    public Mono<ResponseEntity<Payment>> handleWebhook(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "PortOne 결제 완료 정보",
+                    description = "PortOne 결제 완료 정보 (impUid, merchantUid)",
                     required = true
             )
-            @RequestBody PaymentCompleteRequest request) {
+            @RequestBody WebhookRequest request) {
         return paymentService.completePayment(request)
                 .map(ResponseEntity::ok);
     }
@@ -68,8 +71,8 @@ public class PaymentController {
     }
 
     @Operation(
-            summary = "결제 단건 조회",
-            description = "결제 ID로 결제 정보를 조회합니다."
+            summary = "결제 단건 조회 (관리자용)",
+            description = "[관리자] 결제 ID로 결제 정보를 조회합니다. 일반 사용자는 예약 기준 조회(GET /reservation/{reservationId})를 사용하세요."
     )
     @GetMapping("/{paymentId}")
     public Mono<ResponseEntity<Payment>> getPayment(
@@ -89,6 +92,17 @@ public class PaymentController {
             @PathVariable Long reservationId) {
         return paymentService.getPaymentByReservationId(reservationId)
                 .map(ResponseEntity::ok);
+    }
+
+    @Operation(
+            summary = "내 결제 목록 조회",
+            description = "로그인한 사용자의 전체 결제 내역을 조회합니다."
+    )
+    @GetMapping("/my")
+    public Flux<Payment> getMyPayments(
+            @Parameter(description = "사용자 ID", required = true)
+            @RequestHeader("X-User-Id") Long userId) {
+        return paymentService.getMyPayments(userId);
     }
 
     @Operation(
