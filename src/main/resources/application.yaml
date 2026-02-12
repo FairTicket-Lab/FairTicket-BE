@@ -26,16 +26,16 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-# JWT
+# JWT (팀원 A 담당)
 jwt:
   secret: fairticket-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256
-  expiration: 3600000  # 1시간 (ms)
+  expiration: 3600000 # 1시간 (ms)
 
 # Server
 server:
   port: 8080
 
-# Actuator
+# Actuator & Monitoring
 management:
   endpoints:
     web:
@@ -63,3 +63,10 @@ springdoc:
     tags-sorter: alpha
     try-it-out-enabled: true
     disable-swagger-default-url: true
+
+# PortOne 결제 설정 (팀원 C 담당)
+fairticket:
+  portone:
+    api-key: ${PORTONE_API_KEY}
+    api-secret: ${PORTONE_API_SECRET}
+    test-mode: true

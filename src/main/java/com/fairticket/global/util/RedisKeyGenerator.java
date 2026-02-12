@@ -1,6 +1,8 @@
 package com.fairticket.global.util;
 
-// Redis 키 생성을 위한 유틸리티 클래스
+/**
+ * Redis 키 생성을 위한 유틸리티 클래스
+ */
 public class RedisKeyGenerator {
 
     private RedisKeyGenerator() {
@@ -22,7 +24,7 @@ public class RedisKeyGenerator {
         return String.format("hold:%d:%s:%s", scheduleId, zone, seatNo);
     }
 
-    // 입장 토큰 키 (Token+TTL, 300초) - token:{userId}:{scheduleId}
+    // 입장 토큰 키 (Token+TTL, 300초) - token:%d:%d
     public static String tokenKey(Long userId, Long scheduleId) {
         return String.format("token:%d:%d", userId, scheduleId);
     }
@@ -48,8 +50,6 @@ public class RedisKeyGenerator {
     }
 
     // 미결제 자동 취소 타이머 키 (String+TTL) - payment-timer:{reservationId}
-    // 라이브/추첨 공통: 예약 후 5분 이내 미결제 시 취소 처리.
-    // TODO(결제): 예약 생성 시 이 키로 TTL 5분 설정, 만료 시 PENDING 예약 취소 스케줄러/리스너 구현.
     public static String paymentTimerKey(Long reservationId) {
         return String.format("payment-timer:%d", reservationId);
     }
