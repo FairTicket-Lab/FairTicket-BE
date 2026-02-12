@@ -102,13 +102,15 @@ public class RedisKeyExpiredListener {
     private reactor.core.publisher.Mono<Void> restoreSeat(
             com.fairticket.domain.reservation.entity.Reservation reservation) {
 
-        if ("LIVE".equals(reservation.getTrackType()) &&
-                reservation.getSeatNumbers() != null) {
+        if ("LIVE".equals(reservation.getTrackType()) // &&
+               // reservation.getSeatNumbers() != null
+        ){
 
             log.info("좌석 반환 시작: schedule={}, grade={}, seats={}",
                     reservation.getScheduleId(),
-                    reservation.getGrade(),
-                    reservation.getSeatNumbers());
+                    reservation.getGrade()
+                   // reservation.getSeatNumbers()
+                );
 
             // seatNumbers는 단일 좌석 번호 또는 쉼표 구분 목록
             // 개별 좌석 반환은 ReservationSeat 기반으로 처리해야 하지만,

@@ -71,9 +71,9 @@ public class LiveTrackService {
                 .then(scheduleService.validateGradeAndZone(scheduleId, request.getGrade(), request.getZone()))
                 // 6. 좌석 풀에서 제거 후 7. 홀드 설정 (홀드 실패 시 풀에 좌석 반환)
                 .then(seatPoolService.selectSeat(
-                        scheduleId,
-                        request.getZone(),
-                        request.getSeatNumber())
+                                scheduleId,
+                                request.getZone(),
+                                request.getSeatNumber())
                         .flatMap(selected -> {
                             if (!selected) {
                                 return Mono.error(new BusinessException(ErrorCode.SEAT_ALREADY_TAKEN));
@@ -103,15 +103,15 @@ public class LiveTrackService {
                                         .flatMap(exists -> exists
                                                 ? Mono.<Reservation>error(new BusinessException(ErrorCode.ALREADY_PARTICIPATED))
                                                 : Mono.just(Reservation.builder()
-                                                        .userId(userId)
-                                                        .scheduleId(scheduleId)
-                                                        .grade(request.getGrade())
-                                                        .quantity(1)
-                                                        .trackType(TrackType.LIVE.name())
-                                                        .status(ReservationStatus.PENDING.name())
-                                                        .createdAt(LocalDateTime.now())
-                                                        .updatedAt(LocalDateTime.now())
-                                                        .build()))
+                                                .userId(userId)
+                                                .scheduleId(scheduleId)
+                                                .grade(request.getGrade())
+                                                .quantity(1)
+                                                .trackType(TrackType.LIVE.name())
+                                                .status(ReservationStatus.PENDING.name())
+                                                .createdAt(LocalDateTime.now())
+                                                .updatedAt(LocalDateTime.now())
+                                                .build()))
                                         .flatMap(newReservation -> reservationRepository.save(newReservation)
                                                 .flatMap(newRes -> buildAndSaveReservationSeat(newRes.getId(), scheduleId, request.getZone(), request.getSeatNumber(), ReservationSeatStatus.PENDING.name())
                                                         .thenReturn(newRes)))))
@@ -215,5 +215,4 @@ public class LiveTrackService {
     public Mono<Boolean> isLiveTrackClosedByQueue(Long scheduleId) {
         return redisTemplate.hasKey(RedisKeyGenerator.liveClosedKey(scheduleId));
     }
-
 }
