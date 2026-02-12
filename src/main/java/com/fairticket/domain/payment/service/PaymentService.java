@@ -9,6 +9,7 @@ import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
+import com.fairticket.domain.reservation.service.LotteryTrackService;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class PaymentService {
     private final ReservationRepository reservationRepository;
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
+    private final LotteryTrackService lotteryTrackService;
 
     // 결제 준비 (결제창 호출 전)
     public Mono<PaymentInitResponse> initiatePayment(Long reservationId, Long userId) {
@@ -46,7 +48,8 @@ public class PaymentService {
                             .build();
 
                     return paymentRepository.save(payment)
-                            .flatMap(saved -> timerService.startPaymentTimer(reservationId, TrackType.valueOf(reservation.getTrackType()))
+                            .flatMap(saved -> timerService.startPaymentTimer(
+                                            reservationId, TrackType.valueOf(reservation.getTrackType()))
                                     .thenReturn(saved))
                             .map(saved -> PaymentInitResponse.builder()
                                     .paymentId(saved.getId())
@@ -56,7 +59,7 @@ public class PaymentService {
                                             reservation.getGrade(),
                                             reservation.getQuantity()))
                                     // 타임라인 기준 추첨/라이브 공통 5분
-                                    // .timeoutSeconds(trackType == TrackType.LOTTERY ? 300 : 600)  // 라이브 10분 → 5분으로 수정
+                                    // .timeoutSeconds(trackType == TrackType.LOTTERY ? 300 : 600)
                                     .timeoutSeconds(ReservationConstants.PAYMENT_DEADLINE_MINUTES * 60)
                                     .build());
                 });
@@ -69,30 +72,31 @@ public class PaymentService {
                 // PG사 검증
                 .flatMap(payment -> portOneClient.verifyPayment(request.getImpUid())
                         .flatMap(verification -> {
-                            // 금액 검증
                             if (!payment.getAmount().equals(verification.getAmount())) {
                                 log.error("결제 금액 불일치: expected={}, actual={}",
-                                        payment.getAmount(),
-                                        verification.getAmount());
+                                        payment.getAmount(), verification.getAmount());
                                 return Mono.error(new BusinessException(ErrorCode.PAYMENT_AMOUNT_MISMATCH));
                             }
-
-                            // 결제 정보 업데이트
                             payment.setImpUid(request.getImpUid());
                             payment.setStatus(PaymentStatus.COMPLETED.name());
                             payment.setPaidAt(LocalDateTime.now());
                             return paymentRepository.save(payment);
                         }))
                 // 타이머 취소
-                .flatMap(payment -> reservationRepository.findById(payment.getReservationId())
-                        .flatMap(reservation -> timerService.cancelPaymentTimer(reservation.getId())
-                                .thenReturn(payment)))
-                // 추첨 트랙 결제 완료 후속 처리
+                .flatMap(payment -> timerService.cancelPaymentTimer(payment.getReservationId())
+                        .thenReturn(payment))
+                // 트랙별 후속 처리
                 .flatMap(payment -> reservationRepository.findById(payment.getReservationId())
                         .flatMap(reservation -> {
                             if (TrackType.LOTTERY.name().equals(reservation.getTrackType())) {
-                                log.info("추첨 결제 완료: reservationId={}", reservation.getId());
-                                return Mono.just(payment);
+                                // 추첨 결제 완료 후속 처리:
+                                // 예약 상태 PAID_PENDING_SEAT 전환 + Redis lotteryPaidKey 등록
+                                // 이전: log.info만 찍고 실제 처리 없었음
+                                return lotteryTrackService.onPaymentCompleted(
+                                        payment.getReservationId(),
+                                        reservation.getUserId(),
+                                        reservation.getScheduleId()
+                                ).thenReturn(payment);
                             }
                             // 라이브 트랙은 별도 처리 없음
                             return Mono.just(payment);
@@ -113,11 +117,22 @@ public class PaymentService {
                     if (result.isSuccess()) {
                         payment.setStatus(PaymentStatus.REFUNDED.name());
                         payment.setUpdatedAt(LocalDateTime.now());
-                        return paymentRepository.save(payment)
-                                .thenReturn(result);
+                        return paymentRepository.save(payment).thenReturn(result);
                     }
                     return Mono.just(result);
                 }));
+    }
+
+    // 결제 단건 조회
+    public Mono<Payment> getPayment(Long paymentId) {
+        return paymentRepository.findById(paymentId)
+                .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)));
+    }
+
+    // 예약 기준 결제 조회
+    public Mono<Payment> getPaymentByReservationId(Long reservationId) {
+        return paymentRepository.findByReservationId(reservationId)
+                .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)));
     }
 
     private String generateMerchantUid() {
@@ -128,10 +143,10 @@ public class PaymentService {
     private int calculateAmount(Reservation reservation) {
         int unitPrice = switch (reservation.getGrade()) {
             case "VIP" -> 150000;
-            case "R" -> 120000;
-            case "S" -> 90000;
-            case "A" -> 60000;
-            default -> 0;
+            case "R"   -> 120000;
+            case "S"   -> 90000;
+            case "A"   -> 60000;
+            default    -> 0;
         };
         return unitPrice * reservation.getQuantity();
     }

@@ -2,8 +2,10 @@ package com.fairticket.domain.payment.controller;
 
 import com.fairticket.domain.payment.dto.PaymentCompleteRequest;
 import com.fairticket.domain.payment.dto.PaymentInitResponse;
+import com.fairticket.domain.payment.dto.PaymentTimerResponse;
 import com.fairticket.domain.payment.entity.Payment;
 import com.fairticket.domain.payment.service.PaymentService;
+import com.fairticket.domain.payment.service.PaymentTimerService;
 import com.fairticket.domain.payment.service.PortOneClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,16 +22,16 @@ import reactor.core.publisher.Mono;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentTimerService paymentTimerService;
 
     @Operation(
             summary = "결제 준비",
-            description = "예약 ID를 기반으로 결제를 준비하고 merchantUid를 발급합니다. 장바구니는 5분, 당일은 10분 타이머가 시작됩니다."
+            description = "예약 ID를 기반으로 결제를 준비하고 merchantUid를 발급합니다. 추첨/라이브 공통 5분 타이머가 시작됩니다."
     )
     @PostMapping("/prepare")
     public Mono<ResponseEntity<PaymentInitResponse>> preparePayment(
             @Parameter(description = "예약 ID", required = true)
             @RequestParam Long reservationId,
-
             @Parameter(description = "사용자 ID", required = true)
             @RequestHeader("X-User-Id") Long userId) {
         return paymentService.initiatePayment(reservationId, userId)
@@ -59,10 +61,49 @@ public class PaymentController {
     public Mono<ResponseEntity<PortOneClient.RefundResult>> refundPayment(
             @Parameter(description = "결제 ID", required = true)
             @PathVariable Long paymentId,
-
             @Parameter(description = "환불 사유", example = "사용자 요청")
             @RequestParam(defaultValue = "사용자 요청") String reason) {
         return paymentService.refundPayment(paymentId, reason)
                 .map(ResponseEntity::ok);
+    }
+
+    @Operation(
+            summary = "결제 단건 조회",
+            description = "결제 ID로 결제 정보를 조회합니다."
+    )
+    @GetMapping("/{paymentId}")
+    public Mono<ResponseEntity<Payment>> getPayment(
+            @Parameter(description = "결제 ID", required = true)
+            @PathVariable Long paymentId) {
+        return paymentService.getPayment(paymentId)
+                .map(ResponseEntity::ok);
+    }
+
+    @Operation(
+            summary = "예약 기준 결제 조회",
+            description = "예약 ID로 해당 결제 정보를 조회합니다."
+    )
+    @GetMapping("/reservation/{reservationId}")
+    public Mono<ResponseEntity<Payment>> getPaymentByReservation(
+            @Parameter(description = "예약 ID", required = true)
+            @PathVariable Long reservationId) {
+        return paymentService.getPaymentByReservationId(reservationId)
+                .map(ResponseEntity::ok);
+    }
+
+    @Operation(
+            summary = "결제 타이머 남은 시간 조회",
+            description = "결제 제한 시간까지 남은 시간을 반환합니다. 타이머가 없거나 만료된 경우 P004 에러를 반환합니다."
+    )
+    @GetMapping("/{reservationId}/timer")
+    public Mono<ResponseEntity<PaymentTimerResponse>> getRemainingTimer(
+            @Parameter(description = "예약 ID", required = true)
+            @PathVariable Long reservationId) {
+        return paymentTimerService.getRemainingTime(reservationId)
+                .map(seconds -> ResponseEntity.ok(PaymentTimerResponse.builder()
+                        .reservationId(reservationId)
+                        .remainingSeconds(seconds)
+                        .expired(false)
+                        .build()));
     }
 }
