@@ -12,6 +12,7 @@ import java.util.Map;
 
 @Slf4j
 @Service
+@SuppressWarnings("unchecked")
 public class PortOneClient {
 
     private WebClient webClient;
@@ -64,7 +65,7 @@ public class PortOneClient {
                         .header("Authorization", "Bearer " + token)
                         .retrieve()
                         .bodyToMono(Map.class)
-                        .map(response -> {
+                        .<PaymentVerificationResult>map(response -> {
                             Map<String, Object> data = (Map<String, Object>) response.get("response");
                             return PaymentVerificationResult.builder()
                                     .impUid(impUid)
@@ -90,7 +91,7 @@ public class PortOneClient {
                         ))
                         .retrieve()
                         .bodyToMono(Map.class)
-                        .map(response -> {
+                        .<RefundResult>map(response -> {
                             Integer code = (Integer) response.get("code");
                             return RefundResult.builder()
                                     .success(code == 0)

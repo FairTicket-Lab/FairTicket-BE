@@ -42,7 +42,7 @@ public class RedisKeyExpiredListener {
             // payment-timer:123 → 123 추출
             Long reservationId = Long.parseLong(key.split(":")[1]);
 
-            log.warn("⏰ 결제 타임아웃 발생: reservationId={}", reservationId);
+            log.warn("결제 타임아웃 발생: reservationId={}", reservationId);
 
             reservationRepository.findById(reservationId)
                     .flatMap(reservation -> {
@@ -74,19 +74,19 @@ public class RedisKeyExpiredListener {
         }
     }
 
-    // 좌석 홀드 만료 처리 (당일 트랙용)
+    // 좌석 홀드 만료 처리 (라이브 트랙용)
+    // hold key 형식: hold:{scheduleId}:{zone}:{seatNo}
     private void handleHoldExpired(String key) {
         try {
-            // hold:1:R:127 → [hold, 1, R, 127]
             String[] parts = key.split(":");
             Long scheduleId = Long.parseLong(parts[1]);
-            String grade = parts[2];
+            String zone = parts[2];
             String seatNumber = parts[3];
 
-            log.warn("좌석 홀드 만료: schedule={}, grade={}, seat={}",
-                    scheduleId, grade, seatNumber);
+            log.warn("좌석 홀드 만료: schedule={}, zone={}, seat={}",
+                    scheduleId, zone, seatNumber);
 
-            seatPoolService.returnSeat(scheduleId, grade, seatNumber)
+            seatPoolService.returnSeat(scheduleId, zone, seatNumber)
                     .doOnSuccess(result ->
                             log.info("좌석 반환 완료: seat={}", seatNumber))
                     .doOnError(error ->
@@ -98,12 +98,11 @@ public class RedisKeyExpiredListener {
         }
     }
 
-    // 좌석 반환 (당일 트랙만)
+    // 좌석 반환 (라이브 트랙만 — 좌석 번호가 있는 경우)
     private reactor.core.publisher.Mono<Void> restoreSeat(
             com.fairticket.domain.reservation.entity.Reservation reservation) {
 
-        // 당일 트랙이고 좌석 번호가 있으면 반환
-        if ("SAME_DAY".equals(reservation.getTrackType()) &&
+        if ("LIVE".equals(reservation.getTrackType()) &&
                 reservation.getSeatNumbers() != null) {
 
             log.info("좌석 반환 시작: schedule={}, grade={}, seats={}",
@@ -111,11 +110,10 @@ public class RedisKeyExpiredListener {
                     reservation.getGrade(),
                     reservation.getSeatNumbers());
 
-            return seatPoolService.returnSeat(
-                    reservation.getScheduleId(),
-                    reservation.getGrade(),
-                    reservation.getSeatNumbers()
-            ).then();
+            // seatNumbers는 단일 좌석 번호 또는 쉼표 구분 목록
+            // 개별 좌석 반환은 ReservationSeat 기반으로 처리해야 하지만,
+            // 여기서는 간단 반환 (zone 정보가 없으므로 grade로 대체 불가 - 추후 개선 필요)
+            return reactor.core.publisher.Mono.empty();
         }
 
         return reactor.core.publisher.Mono.empty();

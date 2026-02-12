@@ -8,7 +8,6 @@ import com.fairticket.domain.payment.repository.PaymentRepository;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
-// import com.fairticket.domain.reservation.service.CartTrackService; // TODO: B 작업 후 주석 해제
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +27,6 @@ public class PaymentService {
     private final ReservationRepository reservationRepository;
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
-    // private final CartTrackService cartTrackService; // TODO: B 작업 후 주석 해제
 
     // 결제 준비 (결제창 호출 전)
     public Mono<PaymentInitResponse> initiatePayment(Long reservationId, Long userId) {
@@ -49,7 +47,6 @@ public class PaymentService {
 
                     return paymentRepository.save(payment)
                             .flatMap(saved -> {
-                                // 타이머 시작 (reservationId 전달)
                                 return timerService.startPaymentTimer(reservationId, trackType)
                                         .thenReturn(saved);
                             })
@@ -60,7 +57,7 @@ public class PaymentService {
                                     .itemName(String.format("%s %d매 티켓",
                                             reservation.getGrade(),
                                             reservation.getQuantity()))
-                                    .timeoutSeconds(trackType == TrackType.CART ? 300 : 600)
+                                    .timeoutSeconds(trackType == TrackType.LOTTERY ? 300 : 600)
                                     .build());
                 });
     }
@@ -90,21 +87,14 @@ public class PaymentService {
                 .flatMap(payment -> reservationRepository.findById(payment.getReservationId())
                         .flatMap(reservation -> timerService.cancelPaymentTimer(reservation.getId())
                                 .thenReturn(payment)))
-                // B 콜백 (장바구니 트랙인 경우)
+                // 추첨 트랙 결제 완료 후속 처리
                 .flatMap(payment -> reservationRepository.findById(payment.getReservationId())
                         .flatMap(reservation -> {
-                            if (TrackType.CART.name().equals(reservation.getTrackType())) {
-                                // TODO: B 작업 후 주석 해제
-                                // return cartTrackService.onPaymentCompleted(
-                                //         reservation.getId(),
-                                //         reservation.getUserId(),
-                                //         reservation.getScheduleId()
-                                // ).thenReturn(payment);
-
-                                log.info("장바구니 결제 완료 (B 연동 대기중): reservationId={}", reservation.getId());
+                            if (TrackType.LOTTERY.name().equals(reservation.getTrackType())) {
+                                log.info("추첨 결제 완료: reservationId={}", reservation.getId());
                                 return Mono.just(payment);
                             }
-                            // 당일 트랙은 별도 처리 없음
+                            // 라이브 트랙은 별도 처리 없음
                             return Mono.just(payment);
                         }))
                 .doOnSuccess(payment -> log.info("결제 완료 처리: paymentId={}, merchantUid={}",

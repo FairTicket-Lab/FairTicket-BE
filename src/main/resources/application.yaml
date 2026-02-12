@@ -67,6 +67,6 @@ springdoc:
 # PortOne 결제 설정 (팀원 C 담당)
 fairticket:
   portone:
-    api-key: ${PORTONE_API_KEY}
-    api-secret: ${PORTONE_API_SECRET}
+    api-key: ${PORTONE_API_KEY:test-api-key}
+    api-secret: ${PORTONE_API_SECRET:test-api-secret}
     test-mode: true
