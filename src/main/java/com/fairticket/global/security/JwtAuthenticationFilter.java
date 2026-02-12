@@ -1,6 +1,8 @@
 package com.fairticket.global.security;
 
+import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -14,16 +16,12 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 
-/**
- * JWT 인증 WebFilter.
- * Authorization 헤더에서 Bearer 토큰을 추출하여 검증 후 SecurityContext에 인증 정보를 설정한다.
- * principal에 userId(Long)를 저장하여 @AuthenticationPrincipal로 꺼낼 수 있다.
- */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter implements WebFilter {
 
     private final JwtProvider jwtProvider;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
 
     private static final String BEARER_PREFIX = "Bearer ";
 
@@ -31,21 +29,30 @@ public class JwtAuthenticationFilter implements WebFilter {
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String token = resolveToken(exchange.getRequest());
 
-        if (token != null && jwtProvider.validateToken(token)) {
-            Long userId = jwtProvider.getUserId(token);
-            String role = jwtProvider.getRole(token);
-
-            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                    userId,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
-            );
-
-            return chain.filter(exchange)
-                    .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
+        if (token == null || !jwtProvider.validateToken(token)) {
+            return chain.filter(exchange);
         }
 
-        return chain.filter(exchange);
+        // 블랙리스트 체크 (로그아웃된 토큰 거부)
+        String blacklistKey = RedisKeyGenerator.blacklistKey(token);
+        return redisTemplate.hasKey(blacklistKey)
+                .flatMap(isBlacklisted -> {
+                    if (Boolean.TRUE.equals(isBlacklisted)) {
+                        return chain.filter(exchange);
+                    }
+
+                    Long userId = jwtProvider.getUserId(token);
+                    String role = jwtProvider.getRole(token);
+
+                    UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                            userId,
+                            null,
+                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                    );
+
+                    return chain.filter(exchange)
+                            .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
+                });
     }
 
     private String resolveToken(ServerHttpRequest request) {

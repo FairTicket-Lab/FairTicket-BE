@@ -1,12 +1,26 @@
 package com.fairticket.domain.queue.service;
 
+import com.fairticket.domain.queue.config.QueueProperties;
 import com.fairticket.global.util.RedisKeyGenerator;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import jakarta.annotation.PostConstruct;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
@@ -15,74 +29,147 @@ public class QueueScheduler {
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final QueueTokenService queueTokenService;
+    private final QueueProperties queueProperties;
+    private final RedissonClient redissonClient;
+    private final ObjectMapper objectMapper;
 
-    private static final int BATCH_SIZE = 100;
-    private static final int MAX_ACTIVE_USERS = 500;
+    private RedisScript<String> batchAdmitScript;
+
+    @PostConstruct
+    public void init() {
+        batchAdmitScript = RedisScript.of(new ClassPathResource("scripts/batch_admit.lua"), String.class);
+    }
 
     /**
      * 배치 입장 처리 (5초마다)
-     * active 인원이 MAX_ACTIVE_USERS 미만이면 대기열에서 다음 배치 입장
+     * Redisson 분산 락으로 단일 인스턴스만 실행
+     * Lua Script로 원자적 큐→active 이동
      */
-    @Scheduled(fixedDelay = 5000)
+    @Scheduled(fixedDelayString = "${fairticket.queue.scheduler-interval-ms:5000}")
     public void processBatchEntry() {
-        redisTemplate.keys("queue:*")
-                .flatMap(queueKey -> {
-                    String scheduleId = queueKey.split(":")[1];
-                    String activeKey = RedisKeyGenerator.activeKey(Long.parseLong(scheduleId));
+        RLock lock = redissonClient.getLock("scheduler:batch-entry");
+        boolean acquired = false;
+        try {
+            acquired = lock.tryLock(0, 4, TimeUnit.SECONDS);
+            if (!acquired) return;
 
-                    return redisTemplate.opsForValue().get(activeKey)
-                            .defaultIfEmpty("0")
-                            .map(Integer::parseInt)
-                            .flatMapMany(activeCount -> {
-                                if (activeCount >= MAX_ACTIVE_USERS) {
-                                    return Flux.empty();
-                                }
+            redisTemplate.opsForSet()
+                    .members(RedisKeyGenerator.activeSchedulesKey())
+                    .flatMap(this::processBatchForSchedule)
+                    .collectList()
+                    .block(Duration.ofSeconds(4));
 
-                                int allowCount = Math.min(BATCH_SIZE, MAX_ACTIVE_USERS - activeCount);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("배치 입장 처리 실패", e);
+        } finally {
+            if (acquired && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
 
-                                return redisTemplate.opsForZSet()
-                                        .range(queueKey, org.springframework.data.domain.Range.closed(0L, (long) allowCount - 1))
-                                        .flatMap(userId -> {
-                                            Long uid = Long.parseLong(userId);
-                                            Long sid = Long.parseLong(scheduleId);
+    private Mono<Void> processBatchForSchedule(String scheduleIdStr) {
+        Long scheduleId = Long.parseLong(scheduleIdStr);
+        String activeKey = RedisKeyGenerator.activeKey(scheduleId);
+        String queueKey = RedisKeyGenerator.queueKey(scheduleId);
+        long now = System.currentTimeMillis();
 
-                                            return queueTokenService.issueToken(uid, sid)
-                                                    .then(redisTemplate.opsForZSet().remove(queueKey, userId))
-                                                    .then(redisTemplate.opsForValue().increment(activeKey))
-                                                    .doOnSuccess(v -> log.info("배치 입장: userId={}, scheduleId={}", uid, sid));
-                                        });
-                            });
+        return redisTemplate.execute(
+                        batchAdmitScript,
+                        List.of(activeKey, queueKey),
+                        List.of(
+                                String.valueOf(queueProperties.getMaxActiveUsers()),
+                                String.valueOf(queueProperties.getBatchSize()),
+                                String.valueOf(now),
+                                String.valueOf(queueProperties.getActiveTimeoutSeconds() * 1000L)
+                        ))
+                .next()
+                .flatMap(result -> {
+                    try {
+                        Map<String, Object> parsed = objectMapper.readValue(
+                                result, new TypeReference<Map<String, Object>>() {});
+                        @SuppressWarnings("unchecked")
+                        List<String> admitted = (List<String>) parsed.get("admitted");
+                        int activeCount = ((Number) parsed.get("activeCount")).intValue();
+                        int queueSize = ((Number) parsed.get("queueSize")).intValue();
+
+                        if (!admitted.isEmpty()) {
+                            log.info("배치 입장: scheduleId={}, admitted={}, active={}, queue={}",
+                                    scheduleId, admitted.size(), activeCount, queueSize);
+                        }
+
+                        // 큐와 active 모두 비었으면 active-schedules에서 제거
+                        if (queueSize == 0 && activeCount == 0) {
+                            return redisTemplate.opsForSet()
+                                    .remove(RedisKeyGenerator.activeSchedulesKey(), scheduleIdStr)
+                                    .doOnSuccess(v -> log.info("빈 스케줄 정리: scheduleId={}", scheduleId))
+                                    .then();
+                        }
+
+                        return Flux.fromIterable(admitted)
+                                .flatMap(userId -> queueTokenService.issueToken(Long.parseLong(userId), scheduleId)
+                                        .onErrorResume(e -> {
+                                            log.warn("토큰 발급 실패: userId={}, scheduleId={}", userId, scheduleId, e);
+                                            return Mono.empty();
+                                        }))
+                                .then();
+                    } catch (Exception e) {
+                        log.error("Lua Script 결과 파싱 실패: scheduleId={}", scheduleId, e);
+                        return Mono.empty();
+                    }
                 })
-                .subscribe();
+                .doOnError(e -> log.error("배치 입장 실패: scheduleId={}", scheduleId, e))
+                .onErrorResume(e -> Mono.empty());
     }
 
     /**
      * Heartbeat 미갱신 사용자 대기열 제거 (10초마다)
+     * SMEMBERS active-schedules로 대상 스케줄 조회 (KEYS 대체)
      */
-    @Scheduled(fixedDelay = 10000)
+    @Scheduled(fixedDelayString = "${fairticket.queue.cleanup-interval-ms:10000}")
     public void cleanupInactiveUsers() {
-        redisTemplate.keys("queue:*")
-                .flatMap(queueKey -> {
-                    String scheduleId = queueKey.split(":")[1];
-                    Long sid = Long.parseLong(scheduleId);
+        RLock lock = redissonClient.getLock("scheduler:cleanup");
+        boolean acquired = false;
+        try {
+            acquired = lock.tryLock(0, 9, TimeUnit.SECONDS);
+            if (!acquired) return;
 
-                    return redisTemplate.opsForZSet()
-                            .range(queueKey, org.springframework.data.domain.Range.closed(0L, -1L))
-                            .flatMap(userId -> {
-                                String heartbeatKey = RedisKeyGenerator.heartbeatKey(sid, Long.parseLong(userId));
+            redisTemplate.opsForSet()
+                    .members(RedisKeyGenerator.activeSchedulesKey())
+                    .flatMap(scheduleIdStr -> {
+                        Long scheduleId = Long.parseLong(scheduleIdStr);
+                        String queueKey = RedisKeyGenerator.queueKey(scheduleId);
 
-                                return redisTemplate.hasKey(heartbeatKey)
-                                        .flatMap(hasHeartbeat -> {
-                                            if (!hasHeartbeat) {
-                                                return redisTemplate.opsForZSet()
-                                                        .remove(queueKey, userId)
-                                                        .doOnSuccess(v -> log.info("비활성 사용자 제거: userId={}, scheduleId={}",
-                                                                userId, scheduleId));
-                                            }
-                                            return reactor.core.publisher.Mono.empty();
-                                        });
-                            });
-                })
-                .subscribe();
+                        return redisTemplate.opsForZSet()
+                                .range(queueKey, org.springframework.data.domain.Range.closed(0L, -1L))
+                                .flatMap(userId -> {
+                                    String heartbeatKey = RedisKeyGenerator.heartbeatKey(scheduleId, Long.parseLong(userId));
+
+                                    return redisTemplate.hasKey(heartbeatKey)
+                                            .flatMap(hasHeartbeat -> {
+                                                if (!hasHeartbeat) {
+                                                    return redisTemplate.opsForZSet()
+                                                            .remove(queueKey, userId)
+                                                            .doOnSuccess(v -> log.info("비활성 사용자 제거: userId={}, scheduleId={}",
+                                                                    userId, scheduleId));
+                                                }
+                                                return Mono.empty();
+                                            });
+                                });
+                    })
+                    .collectList()
+                    .block(Duration.ofSeconds(9));
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("비활성 사용자 정리 실패", e);
+        } finally {
+            if (acquired && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 }
