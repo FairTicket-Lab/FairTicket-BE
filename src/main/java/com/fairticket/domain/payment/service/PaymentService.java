@@ -5,6 +5,7 @@ import com.fairticket.domain.payment.dto.PaymentInitResponse;
 import com.fairticket.domain.payment.entity.Payment;
 import com.fairticket.domain.payment.entity.PaymentStatus;
 import com.fairticket.domain.payment.repository.PaymentRepository;
+import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
@@ -35,7 +36,6 @@ public class PaymentService {
                 .flatMap(reservation -> {
                     int amount = calculateAmount(reservation);
                     String merchantUid = generateMerchantUid();
-                    TrackType trackType = TrackType.valueOf(reservation.getTrackType());
 
                     Payment payment = Payment.builder()
                             .reservationId(reservationId)
@@ -46,10 +46,8 @@ public class PaymentService {
                             .build();
 
                     return paymentRepository.save(payment)
-                            .flatMap(saved -> {
-                                return timerService.startPaymentTimer(reservationId, trackType)
-                                        .thenReturn(saved);
-                            })
+                            .flatMap(saved -> timerService.startPaymentTimer(reservationId, TrackType.valueOf(reservation.getTrackType()))
+                                    .thenReturn(saved))
                             .map(saved -> PaymentInitResponse.builder()
                                     .paymentId(saved.getId())
                                     .merchantUid(saved.getMerchantUid())
@@ -57,7 +55,9 @@ public class PaymentService {
                                     .itemName(String.format("%s %d매 티켓",
                                             reservation.getGrade(),
                                             reservation.getQuantity()))
-                                    .timeoutSeconds(trackType == TrackType.LOTTERY ? 300 : 600)
+                                    // 타임라인 기준 추첨/라이브 공통 5분
+                                    // .timeoutSeconds(trackType == TrackType.LOTTERY ? 300 : 600)  // 라이브 10분 → 5분으로 수정
+                                    .timeoutSeconds(ReservationConstants.PAYMENT_DEADLINE_MINUTES * 60)
                                     .build());
                 });
     }

@@ -1,5 +1,6 @@
 package com.fairticket.domain.payment.service;
 
+import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.extern.slf4j.Slf4j;
@@ -23,12 +24,10 @@ public class PaymentTimerService {
         this.redisTemplate = redisTemplate;
     }
 
-    // 결제 타이머 시작 (추첨 5분, 라이브 10분)
+    // 결제 타이머 시작 (추첨/라이브 공통 5분)
     public Mono<Void> startPaymentTimer(Long reservationId, TrackType trackType) {
         String timerKey = RedisKeyGenerator.paymentTimerKey(reservationId);
-        Duration ttl = trackType == TrackType.LOTTERY
-                ? Duration.ofMinutes(5)
-                : Duration.ofMinutes(10);
+        Duration ttl = Duration.ofMinutes(ReservationConstants.PAYMENT_DEADLINE_MINUTES);
 
         return redisTemplate.opsForValue()
                 .set(timerKey, "PENDING", ttl)
