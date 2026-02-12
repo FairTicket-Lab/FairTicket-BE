@@ -1,6 +1,9 @@
 package com.fairticket.domain.payment.service;
 
+import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.TrackType;
+import com.fairticket.global.exception.BusinessException;
+import com.fairticket.global.exception.ErrorCode;
 import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,12 +26,14 @@ public class PaymentTimerService {
         this.redisTemplate = redisTemplate;
     }
 
-    // 결제 타이머 시작 (추첨 5분, 라이브 10분)
+    // 결제 타이머 시작 (추첨/라이브 공통 5분)
     public Mono<Void> startPaymentTimer(Long reservationId, TrackType trackType) {
         String timerKey = RedisKeyGenerator.paymentTimerKey(reservationId);
-        Duration ttl = trackType == TrackType.LOTTERY
-                ? Duration.ofMinutes(5)
-                : Duration.ofMinutes(10);
+        // 타임라인 기준 결제 제한 시간: 추첨/라이브 공통 5분
+        // Duration ttl = trackType == TrackType.LOTTERY
+        //         ? Duration.ofMinutes(5)
+        //         : Duration.ofMinutes(10);  // 라이브 10분 → 5분으로 수정 (타임라인 기준)
+        Duration ttl = Duration.ofMinutes(ReservationConstants.PAYMENT_DEADLINE_MINUTES);
 
         return redisTemplate.opsForValue()
                 .set(timerKey, "PENDING", ttl)
@@ -46,9 +51,17 @@ public class PaymentTimerService {
     }
 
     // 남은 시간 조회 (초 단위)
+    // Redis 키가 없으면 → 타이머 만료 또는 미시작 → PAYMENT_TIMEOUT 에러
     public Mono<Long> getRemainingTime(Long reservationId) {
         String timerKey = RedisKeyGenerator.paymentTimerKey(reservationId);
         return redisTemplate.getExpire(timerKey)
-                .map(Duration::getSeconds);
+                .flatMap(duration -> {
+                    long seconds = duration.getSeconds();
+                    // Redis 키 없음: -1(키 없음) 또는 -2(만료됨) 반환
+                    if (seconds < 0) {
+                        return Mono.error(new BusinessException(ErrorCode.PAYMENT_TIMEOUT));
+                    }
+                    return Mono.just(seconds);
+                });
     }
 }
