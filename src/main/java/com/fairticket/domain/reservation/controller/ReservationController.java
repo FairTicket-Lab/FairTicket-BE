@@ -17,7 +17,7 @@ public class ReservationController {
     private final CancellationWindowService cancellationWindowService;
 
     // 예약 취소 (추첨/라이브 공통). 티켓 오픈 2시간 후 ~ 24시간 이내만 가능.
-    @PostMapping("/{reservationId}/cancel")
+    @DeleteMapping("/{reservationId}")
     public Mono<ResponseEntity<Void>> cancelReservation(
             @PathVariable Long reservationId,
             @RequestHeader("X-User-Id") Long userId) {
