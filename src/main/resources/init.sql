@@ -155,7 +155,7 @@ ON CONFLICT DO NOTHING;
 
 -- 공연 회차
 INSERT INTO schedules (concert_id, date_time, total_seats, ticket_open_at, ticket_close_at, status) VALUES
-    (1, '2026-03-15 19:00:00', 1000, '2026-02-09 20:00:00', '2026-03-15 18:00:00', 'OPEN'),
+    (1, NOW() + INTERVAL '30 days', 1000, NOW(), NOW() + INTERVAL '5 hours', 'OPEN'),
     (2, '2026-04-20 18:00:00', 1500, '2026-02-20 20:00:00', '2026-04-20 17:00:00', 'UPCOMING'),
     (1, '2026-01-10 19:00:00', 800, '2025-12-01 20:00:00', '2026-01-10 18:00:00', 'CLOSED')
 ON CONFLICT DO NOTHING;

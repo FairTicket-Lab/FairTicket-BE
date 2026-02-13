@@ -13,8 +13,10 @@ import com.fairticket.domain.reservation.repository.ReservationRepository;
 import com.fairticket.domain.reservation.service.LotteryTrackService;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
+import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -33,54 +35,74 @@ public class PaymentService {
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
     private final LotteryTrackService lotteryTrackService;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
 
-    // 결제 준비 (결제창 호출 전)
+    // 결제 준비 (결제창 호출 전).
     public Mono<PaymentInitResponse> initiatePayment(Long reservationId, Long userId) {
+        // 1. 예약 조회
         return reservationRepository.findById(reservationId)
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.RESERVATION_NOT_FOUND)))
                 .flatMap(reservation -> {
-                    int amount = calculateAmount(reservation);
-                    String merchantUid = generateMerchantUid();
+                    // 2. 재고 카운터 선점 검증: 0 이하면 매진 처리
+                    String stockKey = RedisKeyGenerator.stockKey(
+                            reservation.getScheduleId(), reservation.getGrade());
 
-                    Payment payment = Payment.builder()
-                            .reservationId(reservationId)
-                            .merchantUid(merchantUid)
-                            .amount(amount)
-                            .status(PaymentStatus.PENDING.name())
-                            .createdAt(LocalDateTime.now())
-                            .build();
-
-                    return paymentRepository.save(payment)
-                            .flatMap(saved -> timerService.startPaymentTimer(
-                                            reservationId, TrackType.valueOf(reservation.getTrackType()))
-                                    .thenReturn(saved))
-                            .map(saved -> PaymentInitResponse.builder()
-                                    .paymentId(saved.getId())
-                                    .merchantUid(saved.getMerchantUid())
-                                    .amount(saved.getAmount())
-                                    .itemName(String.format("%s %d매 티켓",
-                                            reservation.getGrade(),
-                                            reservation.getQuantity()))
-                                    // 타임라인 기준 추첨/라이브 공통 5분
-                                    // .timeoutSeconds(trackType == TrackType.LOTTERY ? 300 : 600)
-                                    .timeoutSeconds(ReservationConstants.PAYMENT_DEADLINE_MINUTES * 60)
-                                    .build());
+                    return redisTemplate.opsForValue().get(stockKey)
+                            .defaultIfEmpty("0")
+                            .flatMap(stockStr -> {
+                                long stock = parseLong(stockStr);
+                                int need = reservation.getQuantity() != null ? reservation.getQuantity() : 1;
+                                if (stock <= 0 || stock < need) {
+                                    log.warn("재고 부족으로 결제 준비 거부: reservationId={}, scheduleId={}, grade={}, stock={}, need={}",
+                                            reservationId, reservation.getScheduleId(), reservation.getGrade(), stock, need);
+                                    return Mono.<PaymentInitResponse>error(
+                                            new BusinessException(ErrorCode.SOLD_OUT));
+                                }
+                                // 3. Payment 생성 + 결제 타이머 시작
+                                return createPaymentAndTimer(reservation);
+                            });
                 });
     }
 
-    // 결제 완료 처리 - PortOne Webhook 수신
-    // 프론트엔드에서 impUid, merchantUid만 전달하면 이후 처리 자동 진행
+    private Mono<PaymentInitResponse> createPaymentAndTimer(Reservation reservation) {
+        int amount = calculateAmount(reservation);
+        String merchantUid = generateMerchantUid();
+
+        Payment payment = Payment.builder()
+                .reservationId(reservation.getId())
+                .merchantUid(merchantUid)
+                .amount(amount)
+                .status(PaymentStatus.PENDING.name())
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        return paymentRepository.save(payment)
+                .flatMap(saved -> timerService.startPaymentTimer(
+                                reservation.getId(), TrackType.valueOf(reservation.getTrackType()))
+                        .thenReturn(saved))
+                .map(saved -> PaymentInitResponse.builder()
+                        .paymentId(saved.getId())
+                        .merchantUid(saved.getMerchantUid())
+                        .amount(saved.getAmount())
+                        .itemName(String.format("%s %d매 티켓",
+                                reservation.getGrade(),
+                                reservation.getQuantity()))
+                        .timeoutSeconds(ReservationConstants.PAYMENT_DEADLINE_MINUTES * 60)
+                        .build());
+    }
+
+    // 결제 완료 처리 - PortOne Webhook 수신.
     public Mono<Payment> completePayment(WebhookRequest request) {
         return paymentRepository.findByMerchantUid(request.getMerchantUid())
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)))
-                // 이미 완료된 결제 중복 처리 방지
+                // 1. 이미 완료된 결제 중복 처리 방지
                 .flatMap(payment -> {
                     if (PaymentStatus.COMPLETED.name().equals(payment.getStatus())) {
                         return Mono.error(new BusinessException(ErrorCode.PAYMENT_ALREADY_COMPLETED));
                     }
                     return Mono.just(payment);
                 })
-                // PG사 금액 검증
+                // 2. PG사 금액 검증
                 .flatMap(payment -> portOneClient.verifyPayment(request.getImpUid())
                         .flatMap(verification -> {
                             if (!payment.getAmount().equals(verification.getAmount())) {
@@ -93,21 +115,25 @@ public class PaymentService {
                             payment.setPaidAt(LocalDateTime.now());
                             return paymentRepository.save(payment);
                         }))
-                // 타이머 취소
+                // 3. 타이머 취소
                 .flatMap(payment -> timerService.cancelPaymentTimer(payment.getReservationId())
                         .thenReturn(payment))
-                // 트랙별 후속 처리
+                // 4. 트랙별 후속 처리 + 재고 카운터 차감
                 .flatMap(payment -> reservationRepository.findById(payment.getReservationId())
                         .flatMap(reservation -> {
+                            // 재고 카운터 차감: stock:{scheduleId}:{grade} DECR * quantity
+                            Mono<Void> decrementStock = decrementStockCounter(reservation);
+
                             if (TrackType.LOTTERY.name().equals(reservation.getTrackType())) {
-                                return lotteryTrackService.onPaymentCompleted(
-                                        payment.getReservationId(),
-                                        reservation.getUserId(),
-                                        reservation.getScheduleId()
-                                ).thenReturn(payment);
+                                return decrementStock
+                                        .then(lotteryTrackService.onPaymentCompleted(
+                                                payment.getReservationId(),
+                                                reservation.getUserId(),
+                                                reservation.getScheduleId()))
+                                        .thenReturn(payment);
                             }
-                            // 라이브 트랙: 홀드 해제는 이슈 2에서 연동 예정
-                            return Mono.just(payment);
+                            // Todo: 라이브 트랙: 홀드 해제
+                            return decrementStock.thenReturn(payment);
                         }))
                 .doOnSuccess(payment -> log.info("결제 완료: paymentId={}, merchantUid={}",
                         payment.getId(), payment.getMerchantUid()));
@@ -148,6 +174,23 @@ public class PaymentService {
         return paymentQueryRepository.findByUserId(userId);
     }
 
+    // 재고 카운터 차감 (결제 완료 시).
+    // stock:{scheduleId}:{grade} DECR * quantity
+    private Mono<Void> decrementStockCounter(Reservation reservation) {
+        if (reservation.getGrade() == null) {
+            return Mono.empty();
+        }
+        String stockKey = RedisKeyGenerator.stockKey(reservation.getScheduleId(), reservation.getGrade());
+        int quantity = reservation.getQuantity() != null ? reservation.getQuantity() : 1;
+
+        return Flux.range(0, quantity)
+                .flatMap(i -> redisTemplate.opsForValue().decrement(stockKey))
+                .then()
+                // 카운터가 없으면(키 미존재) 차감 시도 시 음수가 되지 않도록 guard
+                .doOnSuccess(v -> log.info("재고 카운터 차감: scheduleId={}, grade={}, qty=-{}",
+                        reservation.getScheduleId(), reservation.getGrade(), quantity));
+    }
+
     private String generateMerchantUid() {
         return "FAIR_" + System.currentTimeMillis() + "_" +
                 UUID.randomUUID().toString().substring(0, 8);
@@ -162,5 +205,13 @@ public class PaymentService {
             default    -> 0;
         };
         return unitPrice * reservation.getQuantity();
+    }
+
+    private static long parseLong(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 }

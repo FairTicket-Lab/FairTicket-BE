@@ -68,4 +68,24 @@ public class RedisKeyGenerator {
     public static String lotteryAssignedKey(Long scheduleId) {
         return String.format("lottery-assigned:%d", scheduleId);
     }
+
+    // 활성 스케줄 목록 (KEYS 명령어 대체) - active-schedules
+    public static String activeSchedulesKey() {
+        return "active-schedules";
+    }
+
+    // JWT 블랙리스트 키 (로그아웃 시 토큰 무효화) - blacklist:{token}
+    public static String blacklistKey(String token) {
+        return "blacklist:" + token;
+    }
+
+    /**
+     * 등급별 잔여 재고 카운터 키 (String, atomic INCR/DECR 전용)
+     * - 결제 완료 시 DECR, 타임아웃/취소 시 INCR
+     * - SeatPool(Set)의 빠른 재고 확인용 캐시. 단일 출처는 seats 테이블.
+     * stock:{scheduleId}:{grade}
+     */
+    public static String stockKey(Long scheduleId, String grade) {
+        return String.format("stock:%d:%s", scheduleId, grade);
+    }
 }
