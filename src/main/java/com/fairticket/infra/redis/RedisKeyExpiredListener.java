@@ -2,14 +2,20 @@ package com.fairticket.infra.redis;
 
 import com.fairticket.domain.payment.entity.PaymentStatus;
 import com.fairticket.domain.payment.repository.PaymentRepository;
+import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.ReservationStatus;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
+import com.fairticket.domain.reservation.repository.ReservationSeatRepository;
 import com.fairticket.domain.seat.service.SeatPoolService;
+import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.core.RedisKeyExpiredEvent;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 
@@ -20,13 +26,14 @@ public class RedisKeyExpiredListener {
 
     private final PaymentRepository paymentRepository;
     private final ReservationRepository reservationRepository;
+    private final ReservationSeatRepository reservationSeatRepository;
     private final SeatPoolService seatPoolService;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
 
     // Redis Key 만료 이벤트 리스너
     @EventListener
     public void onKeyExpired(RedisKeyExpiredEvent<String> event) {
         String key = new String(event.getSource());
-
         log.info("Redis Key 만료 이벤트: {}", key);
 
         if (key.startsWith("payment-timer:")) {
@@ -39,20 +46,27 @@ public class RedisKeyExpiredListener {
     // 결제 타임아웃 처리
     private void handlePaymentTimeout(String key) {
         try {
-            // payment-timer:123 → 123 추출
+            // payment-timer:{reservationId} → reservationId 추출
             Long reservationId = Long.parseLong(key.split(":")[1]);
-
             log.warn("결제 타임아웃 발생: reservationId={}", reservationId);
 
             reservationRepository.findById(reservationId)
                     .flatMap(reservation -> {
-                        // Reservation 취소
+                        // PENDING 이외의 상태는 이미 처리된 예약 → 건너뜀
+                        // (PAID / PAID_PENDING_SEAT / ASSIGNED: 결제 완료됨, CANCELLED / REFUNDED: 이미 취소됨)
+                        String status = reservation.getStatus();
+                        if (!ReservationStatus.PENDING.name().equals(status)) {
+                            log.info("타임아웃 스킵(이미 처리된 예약): reservationId={}, status={}", reservationId, status);
+                            return Mono.empty();
+                        }
+
+                        // 1) Reservation 취소
                         reservation.setStatus(ReservationStatus.CANCELLED.name());
                         reservation.setUpdatedAt(LocalDateTime.now());
 
                         return reservationRepository.save(reservation)
+                                // 2) Payment 취소
                                 .flatMap(savedReservation ->
-                                        // Payment도 취소
                                         paymentRepository.findByReservationId(reservationId)
                                                 .flatMap(payment -> {
                                                     if (PaymentStatus.PENDING.name().equals(payment.getStatus())) {
@@ -60,10 +74,14 @@ public class RedisKeyExpiredListener {
                                                         payment.setUpdatedAt(LocalDateTime.now());
                                                         return paymentRepository.save(payment);
                                                     }
-                                                    return paymentRepository.save(payment);
+                                                    return Mono.just(payment);
                                                 })
-                                                .then(restoreSeat(savedReservation))
-                                );
+                                                .then(Mono.just(savedReservation))
+                                )
+                                // 3) 좌석 반환 (ReservationSeat 기반)
+                                .flatMap(savedReservation -> restoreSeat(savedReservation))
+                                // 4) 재고 카운터 복구 (stock:{scheduleId}:{grade} INCR)
+                                .flatMap(v -> restoreStockCounter(reservation));
                     })
                     .doOnSuccess(v -> log.info("결제 타임아웃 처리 완료: reservationId={}", reservationId))
                     .doOnError(error -> log.error("결제 타임아웃 처리 실패: reservationId={}", reservationId, error))
@@ -83,14 +101,11 @@ public class RedisKeyExpiredListener {
             String zone = parts[2];
             String seatNumber = parts[3];
 
-            log.warn("좌석 홀드 만료: schedule={}, zone={}, seat={}",
-                    scheduleId, zone, seatNumber);
+            log.warn("좌석 홀드 만료: schedule={}, zone={}, seat={}", scheduleId, zone, seatNumber);
 
             seatPoolService.returnSeat(scheduleId, zone, seatNumber)
-                    .doOnSuccess(result ->
-                            log.info("좌석 반환 완료: seat={}", seatNumber))
-                    .doOnError(error ->
-                            log.error("좌석 반환 실패: seat={}", seatNumber, error))
+                    .doOnSuccess(result -> log.info("좌석 반환 완료: scheduleId={}, zone={}, seat={}", scheduleId, zone, seatNumber))
+                    .doOnError(error -> log.error("좌석 반환 실패: scheduleId={}, zone={}, seat={}", scheduleId, zone, seatNumber, error))
                     .subscribe();
 
         } catch (Exception e) {
@@ -98,26 +113,46 @@ public class RedisKeyExpiredListener {
         }
     }
 
-    // 좌석 반환 (라이브 트랙만 — 좌석 번호가 있는 경우)
-    private reactor.core.publisher.Mono<Void> restoreSeat(
-            com.fairticket.domain.reservation.entity.Reservation reservation) {
+    // ReservationSeat 목록 기반 좌석 풀 반환.
+    private Mono<Void> restoreSeat(Reservation reservation) {
+        Long reservationId = reservation.getId();
+        Long scheduleId = reservation.getScheduleId();
+        String trackType = reservation.getTrackType();
 
-        if ("LIVE".equals(reservation.getTrackType()) // &&
-               // reservation.getSeatNumbers() != null
-        ){
-
-            log.info("좌석 반환 시작: schedule={}, grade={}, seats={}",
-                    reservation.getScheduleId(),
-                    reservation.getGrade()
-                   // reservation.getSeatNumbers()
-                );
-
-            // seatNumbers는 단일 좌석 번호 또는 쉼표 구분 목록
-            // 개별 좌석 반환은 ReservationSeat 기반으로 처리해야 하지만,
-            // 여기서는 간단 반환 (zone 정보가 없으므로 grade로 대체 불가 - 추후 개선 필요)
-            return reactor.core.publisher.Mono.empty();
+        if (!"LIVE".equals(trackType)) {
+            // 추첨 트랙: PENDING 상태에서 타임아웃 → 좌석 미배정이므로 반환 불필요
+            log.debug("추첨 트랙 타임아웃 좌석 반환 스킵: reservationId={}", reservationId);
+            return Mono.empty();
         }
 
-        return reactor.core.publisher.Mono.empty();
+        // 라이브 트랙: ReservationSeat에서 PENDING 상태인 좌석만 풀에 반환
+        return reservationSeatRepository.findByReservationId(reservationId)
+                .filter(rs -> rs.getZone() != null && rs.getSeatNumber() != null)
+                .flatMap(rs -> seatPoolService.returnSeat(scheduleId, rs.getZone(), rs.getSeatNumber())
+                        .doOnSuccess(success -> log.info(
+                                "타임아웃 좌석 반환: reservationId={}, zone={}, seat={}, success={}",
+                                reservationId, rs.getZone(), rs.getSeatNumber(), success))
+                        .doOnError(e -> log.error(
+                                "타임아웃 좌석 반환 실패: reservationId={}, zone={}, seat={}",
+                                reservationId, rs.getZone(), rs.getSeatNumber(), e))
+                        .onErrorResume(e -> Mono.just(false)))
+                .then();
+    }
+
+    // 재고 카운터 복구 (타임아웃 취소 시)
+    // stock:{scheduleId}:{grade} INCR — 결제 완료 시 차감한 카운터를 되돌림.
+    // 추첨/라이브 공통으로 등급 단위로 관리
+    private Mono<Void> restoreStockCounter(Reservation reservation) {
+        if (reservation.getGrade() == null) {
+            return Mono.empty();
+        }
+        String stockKey = RedisKeyGenerator.stockKey(reservation.getScheduleId(), reservation.getGrade());
+        int quantity = reservation.getQuantity() != null ? reservation.getQuantity() : 1;
+
+        return Flux.range(0, quantity)
+                .flatMap(i -> redisTemplate.opsForValue().increment(stockKey))
+                .then()
+                .doOnSuccess(v -> log.info("재고 카운터 복구: scheduleId={}, grade={}, qty=+{}",
+                        reservation.getScheduleId(), reservation.getGrade(), quantity));
     }
 }
