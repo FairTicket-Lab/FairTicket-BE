@@ -1,0 +1,1 @@
+package com.fairticket.domain.payment.dto;
