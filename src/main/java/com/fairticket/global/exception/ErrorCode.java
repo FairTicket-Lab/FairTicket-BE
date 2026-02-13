@@ -25,6 +25,7 @@ public enum ErrorCode {
     QUEUE_FULL(HttpStatus.SERVICE_UNAVAILABLE, "Q004", "대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요"),
 
     // Concert / Schedule
+    CONCERT_NOT_FOUND(HttpStatus.NOT_FOUND, "CO001", "공연을 찾을 수 없습니다"),
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "C003", "회차 정보를 찾을 수 없습니다"),
 
     // Reservation
