@@ -22,8 +22,10 @@ public enum ErrorCode {
     NOT_IN_QUEUE(HttpStatus.NOT_FOUND, "Q001", "대기열에 존재하지 않습니다"),
     QUEUE_ENTRY_FAILED(HttpStatus.CONFLICT, "Q002", "대기열 진입에 실패했습니다"),
     INVALID_QUEUE_TOKEN(HttpStatus.FORBIDDEN, "Q003", "유효하지 않은 입장 토큰입니다"),
+    QUEUE_FULL(HttpStatus.SERVICE_UNAVAILABLE, "Q004", "대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요"),
 
     // Concert / Schedule
+    CONCERT_NOT_FOUND(HttpStatus.NOT_FOUND, "CO001", "공연을 찾을 수 없습니다"),
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "C003", "회차 정보를 찾을 수 없습니다"),
 
     // Reservation

@@ -9,16 +9,16 @@ import com.fairticket.domain.user.repository.UserRepository;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
 import com.fairticket.global.security.JwtProvider;
+import com.fairticket.global.util.RedisKeyGenerator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
-/**
- * 인증 서비스. 회원가입(BCrypt 암호화) 및 로그인(JWT 발급) 처리.
- */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -26,8 +26,8 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
 
-    /** 회원가입: 이메일 중복 체크 → BCrypt 암호화 → 저장 → JWT 발급 */
     public Mono<AuthResponse> signup(SignupRequest request) {
         return userRepository.existsByEmail(request.getEmail())
                 .flatMap(exists -> {
@@ -51,13 +51,14 @@ public class AuthService {
                                 return AuthResponse.builder()
                                         .userId(saved.getId())
                                         .email(saved.getEmail())
+                                        .name(saved.getName())
+                                        .role(saved.getRole())
                                         .token(token)
                                         .build();
                             });
                 });
     }
 
-    /** 로그인: 이메일로 조회 → 비밀번호 검증 → JWT 발급 */
     public Mono<AuthResponse> login(LoginRequest request) {
         return userRepository.findByEmail(request.getEmail())
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.UNAUTHORIZED)))
@@ -70,8 +71,21 @@ public class AuthService {
                     return Mono.just(AuthResponse.builder()
                             .userId(user.getId())
                             .email(user.getEmail())
+                            .name(user.getName())
+                            .role(user.getRole())
                             .token(token)
                             .build());
                 });
+    }
+
+    public Mono<Void> logout(String token) {
+        long remainingMs = jwtProvider.getRemainingExpiration(token);
+        if (remainingMs <= 0) {
+            return Mono.empty();
+        }
+        String blacklistKey = RedisKeyGenerator.blacklistKey(token);
+        return redisTemplate.opsForValue()
+                .set(blacklistKey, "revoked", Duration.ofMillis(remainingMs))
+                .then();
     }
 }

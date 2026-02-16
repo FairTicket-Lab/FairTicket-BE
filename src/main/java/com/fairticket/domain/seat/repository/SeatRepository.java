@@ -36,4 +36,8 @@ public interface SeatRepository extends ReactiveCrudRepository<Seat, Long> {
     // 등급별 좌석 수 집계 (hasLotteryQuotaReached 최적화용)
     @Query("SELECT grade, COUNT(*) as count FROM seats WHERE schedule_id = :scheduleId GROUP BY grade")
     Flux<GradeSeatCount> findSeatCountByScheduleIdGroupByGrade(Long scheduleId);
+
+    // 등급별 잔여석 수 집계 (공연 조회 API용)
+    @Query("SELECT grade, COUNT(*) as count FROM seats WHERE schedule_id = :scheduleId AND status = 'AVAILABLE' GROUP BY grade")
+    Flux<GradeSeatCount> findAvailableSeatCountByScheduleIdGroupByGrade(@Param("scheduleId") Long scheduleId);
 }

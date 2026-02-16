@@ -32,6 +32,11 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         // 인증 불필요
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/**").permitAll()
+                        // 공연·스케줄 조회 (비인증 허용)
+                        .pathMatchers(HttpMethod.GET, "/api/v1/concerts/**").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/api/v1/schedules/**").permitAll()
+                        // 결제 Webhook (PortOne 서버→서버 호출)
+                        .pathMatchers(HttpMethod.POST, "/api/v1/payment/webhook").permitAll()
                         // Actuator
                         .pathMatchers("/actuator/**").permitAll()
                         // Swagger (WebFlux)

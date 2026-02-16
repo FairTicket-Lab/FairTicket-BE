@@ -66,6 +66,13 @@ springdoc:
 
 # PortOne 결제 설정 (팀원 C 담당)
 fairticket:
+  queue:
+    batch-size: 100
+    max-active-users: 500
+    max-queue-size: 100000
+    heartbeat-ttl-seconds: 30
+    token-ttl-seconds: 300
+    active-timeout-seconds: 60
   portone:
     api-key: ${PORTONE_API_KEY:test-api-key}
     api-secret: ${PORTONE_API_SECRET:test-api-secret}
