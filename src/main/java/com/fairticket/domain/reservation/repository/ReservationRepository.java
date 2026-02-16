@@ -52,4 +52,7 @@ public interface ReservationRepository extends ReactiveCrudRepository<Reservatio
            "WHERE schedule_id = :scheduleId AND track_type = 'LOTTERY' " +
            "AND status IN ('PENDING', 'PAID_PENDING_SEAT') GROUP BY grade")
     Flux<GradeReservedSum> findLotteryReservedSumByScheduleIdGroupByGrade(Long scheduleId);
+
+    // 사용자의 해당 공연 일정의 PENDING 상태 예약 조회 (결제 대기 중인 예약 재조회용)
+    Mono<Reservation> findFirstByUserIdAndScheduleIdAndStatusOrderByCreatedAtDesc(Long userId, Long scheduleId, String status);
 }
