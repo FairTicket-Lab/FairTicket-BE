@@ -102,10 +102,12 @@ public class ConcertService {
         if (schedules.isEmpty()) return "sold-out";
         boolean anyOpen = schedules.stream().anyMatch(s -> ScheduleStatus.OPEN.name().equals(s.getStatus()));
         boolean allUpcoming = schedules.stream().allMatch(s -> ScheduleStatus.UPCOMING.name().equals(s.getStatus()));
-        boolean allClosed = schedules.stream().allMatch(s -> ScheduleStatus.CLOSED.name().equals(s.getStatus()));
+        boolean allClosedOrCompleted = schedules.stream().allMatch(s ->
+                ScheduleStatus.CLOSED.name().equals(s.getStatus())
+                        || ScheduleStatus.COMPLETED.name().equals(s.getStatus()));
         if (anyOpen) return "on-sale";
         if (allUpcoming) return "coming-soon";
-        if (allClosed) return "sold-out";
+        if (allClosedOrCompleted) return "sold-out";
         return "on-sale"; // mixed
     }
 
@@ -139,7 +141,7 @@ public class ConcertService {
                 .findAvailableSeatCountByScheduleIdGroupByGrade(refSchedule.getId())
                 .collectList()
                 .map(list -> list.stream()
-                        .collect(Collectors.toMap(GradeSeatCount::getGrade, GradeSeatCount::getCount)));
+                        .collect(Collectors.toMap(GradeSeatCount::getGrade, g -> g.getCount() != null ? g.getCount() : 0L)));
 
         return Mono.zip(gradesMono, totalByGrade, availableByGrade)
                 .map(tuple -> {

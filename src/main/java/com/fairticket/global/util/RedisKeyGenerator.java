@@ -1,96 +1,89 @@
-  package com.fairticket.global.util;                                           
-   
-  /**                                                                           
-   * Redis 키 생성을 위한 유틸리티 클래스                   
-   */
-  public class RedisKeyGenerator {
+package com.fairticket.global.util;
 
-      private RedisKeyGenerator() {
-          throw new UnsupportedOperationException("유틸리티 클래스는
-  인스턴스화할 수 없습니다.");
-      }
+/**
+ * Redis 키 생성을 위한 유틸리티 클래스
+ */
+public class RedisKeyGenerator {
 
-      // 대기열 순번 관리 키 (SortedSet) - queue:{scheduleId}
-      public static String queueKey(Long scheduleId) {
-          return String.format("queue:%d", scheduleId);
-      }
+    private RedisKeyGenerator() {
+        throw new UnsupportedOperationException("유틸리티 클래스는 인스턴스화할 수 없습니다.");
+    }
 
-      // 구역별 잔여 좌석 풀 키 (Set) - seats:{scheduleId}:{zone}
-      public static String seatsKey(Long scheduleId, String zone) {
-          return String.format("seats:%d:%s", scheduleId, zone);
-      }
+    // 대기열 순번 관리 키 (SortedSet) - queue:{scheduleId}
+    public static String queueKey(Long scheduleId) {
+        return String.format("queue:%d", scheduleId);
+    }
 
-      // 좌석 임시 홀드 키 (String+TTL, 660초) -
-  hold:{scheduleId}:{zone}:{seatNo}
-      public static String holdKey(Long scheduleId, String zone, String seatNo)
-  {
-          return String.format("hold:%d:%s:%s", scheduleId, zone, seatNo);
-      }
+    // 구역별 잔여 좌석 풀 키 (Set) - seats:{scheduleId}:{zone}
+    public static String seatsKey(Long scheduleId, String zone) {
+        return String.format("seats:%d:%s", scheduleId, zone);
+    }
 
-      // 입장 토큰 키 (Token+TTL, 300초) - token:%d:%d
-      public static String tokenKey(Long userId, Long scheduleId) {
-          return String.format("token:%d:%d", userId, scheduleId);
-      }
+    // 좌석 임시 홀드 키 (String+TTL, 660초) - hold:{scheduleId}:{zone}:{seatNo}
+    public static String holdKey(Long scheduleId, String zone, String seatNo) {
+        return String.format("hold:%d:%s:%s", scheduleId, zone, seatNo);
+    }
 
-      // 좌석 배정 분산 락 키 (Lock) - lock:assign:{scheduleId}:{grade}
-      public static String lockAssignKey(Long scheduleId, String grade) {
-          return String.format("lock:assign:%d:%s", scheduleId, grade);
-      }
+    // 입장 토큰 키 (Token+TTL, 300초) - token:%d:%d
+    public static String tokenKey(Long userId, Long scheduleId) {
+        return String.format("token:%d:%d", userId, scheduleId);
+    }
 
-      // 대기열 이탈 감지 키 (String+TTL, 30초) -
-  heartbeat:{scheduleId}:{userId}
-      public static String heartbeatKey(Long scheduleId, Long userId) {
-          return String.format("heartbeat:%d:%d", scheduleId, userId);
-      }
+    // 좌석 배정 분산 락 키 (Lock) - lock:assign:{scheduleId}:{grade}
+    public static String lockAssignKey(Long scheduleId, String grade) {
+        return String.format("lock:assign:%d:%s", scheduleId, grade);
+    }
 
-      // 동시 입장 인원 수 키 (String) - active:{scheduleId}
-      public static String activeKey(Long scheduleId) {
-          return String.format("active:%d", scheduleId);
-      }
+    // 대기열 이탈 감지 키 (String+TTL, 30초) - heartbeat:{scheduleId}:{userId}
+    public static String heartbeatKey(Long scheduleId, Long userId) {
+        return String.format("heartbeat:%d:%d", scheduleId, userId);
+    }
 
-      // 추첨 결제 성공자 목록 키 (Set) - lottery-paid:{scheduleId}
-      public static String lotteryPaidKey(Long scheduleId) {
-          return String.format("lottery-paid:%d", scheduleId);
-      }
+    // 동시 입장 인원 수 키 (String) - active:{scheduleId}
+    public static String activeKey(Long scheduleId) {
+        return String.format("active:%d", scheduleId);
+    }
 
-      // 미결제 자동 취소 타이머 키 (String+TTL) - payment-timer:{reservationId}
-      public static String paymentTimerKey(Long reservationId) {
-          return String.format("payment-timer:%d", reservationId);
-      }
+    // 추첨 결제 성공자 목록 키 (Set) - lottery-paid:{scheduleId}
+    public static String lotteryPaidKey(Long scheduleId) {
+        return String.format("lottery-paid:%d", scheduleId);
+    }
 
-      // 라이브 트랙 마감 시각 (값=epoch millis, 취소 가능 기간 계산용) -
-  live-closed:{scheduleId}
-      public static String liveClosedKey(Long scheduleId) {
-          return String.format("live-closed:%d", scheduleId);
-      }
+    // 미결제 자동 취소 타이머 키 (String+TTL) - payment-timer:{reservationId}
+    public static String paymentTimerKey(Long reservationId) {
+        return String.format("payment-timer:%d", reservationId);
+    }
 
-      // 대기열이 0이 된 시각 (0이 10분 지속 시 라이브 마감 판단용) -
-  queue-zero-since:{scheduleId}
-      public static String queueZeroSinceKey(Long scheduleId) {
-          return String.format("queue-zero-since:%d", scheduleId);
-      }
+    // 라이브 트랙 마감 시각 (값=epoch millis, 취소 가능 기간 계산용) - live-closed:{scheduleId}
+    public static String liveClosedKey(Long scheduleId) {
+        return String.format("live-closed:%d", scheduleId);
+    }
 
-      // 추첨 좌석 배정 완료 플래그 (라이브 마감 후 1회만 배정 실행) -
-  lottery-assigned:{scheduleId}
-      public static String lotteryAssignedKey(Long scheduleId) {
-          return String.format("lottery-assigned:%d", scheduleId);
-      }
+    // 대기열이 0이 된 시각 (0이 10분 지속 시 라이브 마감 판단용) - queue-zero-since:{scheduleId}
+    public static String queueZeroSinceKey(Long scheduleId) {
+        return String.format("queue-zero-since:%d", scheduleId);
+    }
 
-      // 활성 스케줄 목록 (KEYS 명령어 대체) - active-schedules
-      public static String activeSchedulesKey() {
-          return "active-schedules";
-      }
+    // 추첨 좌석 배정 완료 플래그 (라이브 마감 후 1회만 배정 실행) - lottery-assigned:{scheduleId}
+    public static String lotteryAssignedKey(Long scheduleId) {
+        return String.format("lottery-assigned:%d", scheduleId);
+    }
 
-      // JWT 블랙리스트 키 (로그아웃 시 토큰 무효화) - blacklist:{token}
-      public static String blacklistKey(String token) {
-          return "blacklist:" + token;
-      }
+    // 활성 스케줄 목록 (KEYS 명령어 대체) - active-schedules
+    public static String activeSchedulesKey() {
+        return "active-schedules";
+    }
 
-      // 등급별 잔여 재고 카운터 키 (String, atomic INCR/DECR 전용)
-      // - 결제 완료 시 DECR, 타임아웃/취소 시 INCR
-      // - SeatPool(Set)의 빠른 재고 확인용 캐시. 단일 출처는 seats 테이블.
-      // stock:{scheduleId}:{grade}
-      public static String stockKey(Long scheduleId, String grade) {
-          return String.format("stock:%d:%s", scheduleId, grade);
-      }
-  }
+    // JWT 블랙리스트 키 (로그아웃 시 토큰 무효화) - blacklist:{token}
+    public static String blacklistKey(String token) {
+        return "blacklist:" + token;
+    }
+
+    // 등급별 잔여 재고 카운터 키 (String, atomic INCR/DECR 전용)
+    // - 결제 완료 시 DECR, 타임아웃/취소 시 INCR
+    // - SeatPool(Set)의 빠른 재고 확인용 캐시. 단일 출처는 seats 테이블.
+    // stock:{scheduleId}:{grade}
+    public static String stockKey(Long scheduleId, String grade) {
+        return String.format("stock:%d:%s", scheduleId, grade);
+    }
+}

@@ -55,4 +55,10 @@ public interface ReservationRepository extends ReactiveCrudRepository<Reservatio
 
     // 사용자의 해당 공연 일정의 PENDING 상태 예약 조회 (결제 대기 중인 예약 재조회용)
     Mono<Reservation> findFirstByUserIdAndScheduleIdAndStatusOrderByCreatedAtDesc(Long userId, Long scheduleId, String status);
+
+    // 추첨 결제 확정(PAID_PENDING_SEAT) 수량 합계 (라이브 좌석 보호용: 풀 잔여 - 이 값 = 라이브 판매 가능량)
+    @Query("SELECT COALESCE(SUM(quantity), 0) FROM reservations " +
+           "WHERE schedule_id = :scheduleId AND grade = :grade AND track_type = 'LOTTERY' " +
+           "AND status = 'PAID_PENDING_SEAT'")
+    Mono<Long> sumLotteryPaidQuantityByScheduleAndGrade(Long scheduleId, String grade);
 }

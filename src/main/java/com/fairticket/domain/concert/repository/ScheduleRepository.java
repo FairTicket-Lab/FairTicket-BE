@@ -10,6 +10,9 @@ public interface ScheduleRepository extends ReactiveCrudRepository<Schedule, Lon
 
     Flux<Schedule> findByConcertId(Long concertId);
 
-    // 티켓 오픈 시각이 주어진 시각 이전(이하)인 회차만 조회. 스케줄러에서 활성 회차만 처리할 때 사용 
+    // 티켓 오픈 시각이 주어진 시각 이전(이하)인 회차만 조회. 스케줄러에서 활성 회차만 처리할 때 사용
     Flux<Schedule> findByTicketOpenAtLessThanEqual(LocalDateTime time);
+
+    // 스케줄러용: 오픈 시각 이전이면서 COMPLETED가 아닌 활성 회차만 조회
+    Flux<Schedule> findByTicketOpenAtLessThanEqualAndStatusNot(LocalDateTime time, String status);
 }

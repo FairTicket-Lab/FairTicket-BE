@@ -6,10 +6,13 @@ import com.fairticket.domain.reservation.entity.ReservationStatus;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 
@@ -21,63 +24,72 @@ public class PaymentVerificationScheduler {
     private final PaymentRepository paymentRepository;
     private final ReservationRepository reservationRepository;
     private final PortOneClient portOneClient;
+    private final RedissonClient redissonClient;
 
     @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.MINUTES)
     public void verifyPendingPayments() {
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(5);
+        RLock lock = redissonClient.getLock("scheduler:payment-verification");
+        boolean acquired = false;
+        try {
+            acquired = lock.tryLock(0, 55, TimeUnit.SECONDS);
+            if (!acquired) return;
 
-        paymentRepository.findByStatus(PaymentStatus.PENDING.name())
-                .filter(payment -> payment.getCreatedAt() != null
-                        && payment.getCreatedAt().isBefore(threshold))
-                .filter(payment -> payment.getImpUid() != null)
-                .flatMap(payment -> portOneClient.verifyPayment(payment.getImpUid())
-                        .flatMap(verification -> {
-                            switch (verification.getStatus()) {
-                                case COMPLETED -> {
-                                    // PG에서 결제 완료 → DB 동기화
-                                    log.info("결제 불일치 복구 - 완료 처리: paymentId={}, impUid={}",
-                                            payment.getId(), payment.getImpUid());
-                                    payment.setStatus(PaymentStatus.COMPLETED.name());
-                                    payment.setPaidAt(LocalDateTime.now());
-                                    return paymentRepository.save(payment)
-                                            .flatMap(saved -> updateReservationStatus(
-                                                    saved.getReservationId(), ReservationStatus.PAID.name()));
+            LocalDateTime threshold = LocalDateTime.now().minusMinutes(5);
+
+            paymentRepository.findByStatus(PaymentStatus.PENDING.name())
+                    .filter(payment -> payment.getCreatedAt() != null
+                            && payment.getCreatedAt().isBefore(threshold))
+                    .filter(payment -> payment.getImpUid() != null)
+                    .flatMap(payment -> portOneClient.verifyPayment(payment.getImpUid())
+                            .flatMap(verification -> {
+                                switch (verification.getStatus()) {
+                                    case COMPLETED -> {
+                                        log.info("결제 불일치 복구 - 완료 처리: paymentId={}, impUid={}",
+                                                payment.getId(), payment.getImpUid());
+                                        payment.setStatus(PaymentStatus.COMPLETED.name());
+                                        payment.setPaidAt(LocalDateTime.now());
+                                        return paymentRepository.save(payment)
+                                                .flatMap(saved -> updateReservationStatus(
+                                                        saved.getReservationId(), ReservationStatus.PAID.name()));
+                                    }
+                                    case FAILED -> {
+                                        log.warn("결제 불일치 복구 - 실패 처리: paymentId={}, impUid={}",
+                                                payment.getId(), payment.getImpUid());
+                                        payment.setStatus(PaymentStatus.FAILED.name());
+                                        payment.setUpdatedAt(LocalDateTime.now());
+                                        return paymentRepository.save(payment)
+                                                .flatMap(saved -> updateReservationStatus(
+                                                        saved.getReservationId(), ReservationStatus.CANCELLED.name()));
+                                    }
+                                    default -> {
+                                        log.debug("결제 검증 대기 중: paymentId={}, status={}",
+                                                payment.getId(), verification.getStatus());
+                                        return Mono.just(payment);
+                                    }
                                 }
-                                case FAILED -> {
-                                    // PG에서 결제 실패 → DB 동기화
-                                    log.warn("결제 불일치 복구 - 실패 처리: paymentId={}, impUid={}",
-                                            payment.getId(), payment.getImpUid());
-                                    payment.setStatus(PaymentStatus.FAILED.name());
-                                    payment.setUpdatedAt(LocalDateTime.now());
-                                    return paymentRepository.save(payment)
-                                            .flatMap(saved -> updateReservationStatus(
-                                                    saved.getReservationId(), ReservationStatus.CANCELLED.name()));
-                                }
-                                default -> {
-                                    // 아직 처리 중 → Redis TTL 만료로 처리 대기
-                                    log.debug("결제 검증 대기 중: paymentId={}, status={}",
-                                            payment.getId(), verification.getStatus());
-                                    return Mono.just(payment);
-                                }
-                            }
-                        })
-                        .onErrorResume(e -> {
-                            log.warn("결제 검증 API 호출 실패: paymentId={}, error={}",
-                                    payment.getId(), e.getMessage());
-                            return Mono.just(payment);
-                        }))
-                .doOnSubscribe(s -> log.debug("결제 불일치 복구 스캔 시작"))
-                .count()
-                .doOnSuccess(count -> {
-                    if (count > 0) {
-                        log.info("결제 불일치 복구 처리: {}건", count);
-                    }
-                })
-                .onErrorResume(e -> {
-                    log.warn("결제 불일치 복구 스케줄러 오류: {}", e.getMessage());
-                    return Mono.just(0L);
-                })
-                .subscribe();
+                            })
+                            .onErrorResume(e -> {
+                                log.warn("결제 검증 API 호출 실패: paymentId={}, error={}",
+                                        payment.getId(), e.getMessage());
+                                return Mono.just(payment);
+                            }))
+                    .count()
+                    .doOnSuccess(count -> {
+                        if (count > 0) {
+                            log.info("결제 불일치 복구 처리: {}건", count);
+                        }
+                    })
+                    .block(Duration.ofSeconds(30));
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("결제 불일치 복구 스케줄러 오류", e);
+        } finally {
+            if (acquired && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     private Mono<Void> updateReservationStatus(Long reservationId, String status) {

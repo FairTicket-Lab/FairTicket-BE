@@ -11,6 +11,7 @@ import com.fairticket.domain.reservation.repository.ReservationSeatRepository;
 import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.seat.dto.SeatSelectionRequest;
 import com.fairticket.domain.seat.dto.SeatSelectionResponse;
+import com.fairticket.domain.seat.entity.SeatStatus;
 import com.fairticket.domain.seat.repository.SeatRepository;
 import com.fairticket.domain.seat.service.SeatHoldService;
 import com.fairticket.domain.seat.service.SeatPoolService;
@@ -67,6 +68,12 @@ public class LiveTrackService {
                         reservationRepository.sumLiveQuantityByUserAndSchedule(scheduleId, userId)
                                 .map(qty -> (qty != null ? qty : 0L) < ReservationConstants.LIVE_MAX_QUANTITY_PER_USER),
                         ErrorCode.LIVE_MAX_QUANTITY_EXCEEDED))
+                // 4-1. 추첨 결제 확정분 보호: 등급별 잔여석에서 추첨 결제 확정 수량을 뺀 만큼만 라이브 판매 가능
+                .then(requireTrue(
+                        seatPoolService.getRemainingSeatsForGrade(scheduleId, request.getGrade())
+                                .zipWith(reservationRepository.sumLotteryPaidQuantityByScheduleAndGrade(scheduleId, request.getGrade()))
+                                .map(tuple -> tuple.getT1() - tuple.getT2() > 0),
+                        ErrorCode.SOLD_OUT))
                 // 5. 등급·구역 검증: 선택한 구역이 해당 등급에 속하는지
                 .then(scheduleService.validateGradeAndZone(scheduleId, request.getGrade(), request.getZone()))
                 // 6. 좌석 풀에서 제거 후 7. 홀드 설정 (홀드 실패 시 풀에 좌석 반환)
@@ -142,16 +149,35 @@ public class LiveTrackService {
                 .then();
     }
 
-    // 라이브 예약 결제 완료 시 해당 예약의 좌석 홀드를 즉시 해제.
-    // PaymentService(또는 결제 콜백)에서 라이브 결제 완료 처리 후 반드시 호출할 것.
-    public Mono<Void> releaseHoldsForReservation(Long reservationId) {
+    // 라이브 결제 완료 시 후속 처리:
+    // 1) Redis 홀드 해제 (LiveHoldExpiryScheduler가 만료 처리하지 않도록)
+    // 2) ReservationSeat PENDING → ASSIGNED
+    // 3) Seat.status → SOLD
+    // 4) Reservation PENDING → PAID
+    public Mono<Void> onPaymentCompleted(Long reservationId) {
         return reservationRepository.findById(reservationId)
                 .filter(r -> TrackType.LIVE.name().equals(r.getTrackType()))
-                .flatMapMany(reservation -> reservationSeatRepository.findByReservationId(reservationId)
-                        .flatMap(seat -> seatHoldService.releaseHold(reservation.getScheduleId(), seat.getZone(), seat.getSeatNumber())
-                                .thenReturn(seat)))
-                .then()
-                .doOnSuccess(v -> log.info("라이브 결제 완료로 홀드 해제: reservationId={}", reservationId));
+                .flatMap(reservation -> {
+                    Long scheduleId = reservation.getScheduleId();
+                    return reservationSeatRepository.findByReservationId(reservationId)
+                            .filter(rs -> ReservationSeatStatus.PENDING.name().equals(rs.getStatus()))
+                            .flatMap(seat ->
+                                    seatHoldService.releaseHold(scheduleId, seat.getZone(), seat.getSeatNumber())
+                                            .then(seatRepository.updateStatusByScheduleIdAndZoneAndSeatNumber(
+                                                    SeatStatus.SOLD.name(), scheduleId, seat.getZone(), seat.getSeatNumber()))
+                                            .then(Mono.defer(() -> {
+                                                seat.setStatus(ReservationSeatStatus.ASSIGNED.name());
+                                                seat.setAssignedAt(LocalDateTime.now());
+                                                return reservationSeatRepository.save(seat);
+                                            })))
+                            .then(Mono.defer(() -> {
+                                reservation.setStatus(ReservationStatus.PAID.name());
+                                reservation.setUpdatedAt(LocalDateTime.now());
+                                return reservationRepository.save(reservation);
+                            }));
+                })
+                .doOnSuccess(v -> log.info("라이브 결제 완료 처리: reservationId={}", reservationId))
+                .then();
     }
 
     // 선택한 등급에 속한 구역 목록 (등급 선택 후 구역 선택용)
