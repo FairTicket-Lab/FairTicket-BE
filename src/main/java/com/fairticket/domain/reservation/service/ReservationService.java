@@ -1,14 +1,17 @@
 package com.fairticket.domain.reservation.service;
 
+import com.fairticket.domain.reservation.dto.MyReservationResponse;
 import com.fairticket.domain.reservation.dto.ReservationResponse;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.ReservationStatus;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
+import com.fairticket.domain.reservation.repository.ReservationSeatRepository;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -19,6 +22,7 @@ import java.time.LocalDateTime;
 public class ReservationService {
 
     private final ReservationRepository reservationRepository;
+    private final ReservationSeatRepository reservationSeatRepository;
 
     /**
      * 사용자의 해당 공연 일정에서 결제 대기 중인(PENDING) 예약을 조회합니다.
@@ -40,12 +44,34 @@ public class ReservationService {
                         userId, scheduleId, error.getMessage()));
     }
 
+    // 마이페이지: 내 전체 예매 내역 (트랙 타입, 좌석 배정 정보 포함)
+    public Flux<MyReservationResponse> getMyReservations(Long userId) {
+        return reservationRepository.findByUserId(userId)
+                .flatMap(reservation -> reservationSeatRepository.findByReservationId(reservation.getId())
+                        .map(rs -> MyReservationResponse.SeatInfo.builder()
+                                .zone(rs.getZone())
+                                .seatNumber(rs.getSeatNumber())
+                                .status(rs.getStatus())
+                                .build())
+                        .collectList()
+                        .map(seats -> MyReservationResponse.builder()
+                                .id(reservation.getId())
+                                .scheduleId(reservation.getScheduleId())
+                                .grade(reservation.getGrade())
+                                .quantity(reservation.getQuantity())
+                                .trackType(reservation.getTrackType())
+                                .status(reservation.getStatus())
+                                .seats(seats)
+                                .createdAt(reservation.getCreatedAt())
+                                .build()));
+    }
+
     /**
      * Reservation 엔티티를 ReservationResponse DTO로 변환합니다.
      */
     private ReservationResponse toReservationResponse(Reservation reservation) {
         // 결제 만료 시간: 예약 생성 후 5분 (Payment 타이머 기준)
-        LocalDateTime paymentDeadline = reservation.getCreatedAt() != null ? 
+        LocalDateTime paymentDeadline = reservation.getCreatedAt() != null ?
                 reservation.getCreatedAt().plusMinutes(5) : null;
 
         return ReservationResponse.builder()

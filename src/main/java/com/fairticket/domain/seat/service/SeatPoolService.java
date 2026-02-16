@@ -190,4 +190,12 @@ public class SeatPoolService {
                 .map(total -> total / 2)
                 .defaultIfEmpty(0L);
     }
+
+    // 등급별 Redis 풀 잔여 좌석 수 (라이브 판매 가능량 계산용)
+    public Mono<Long> getRemainingSeatsForGrade(Long scheduleId, String grade) {
+        return zoneRepository.findByScheduleIdAndGrade(scheduleId, grade)
+                .flatMap(zone -> redisTemplate.opsForSet()
+                        .size(RedisKeyGenerator.seatsKey(scheduleId, zone.getZone())))
+                .reduce(0L, Long::sum);
+    }
 }

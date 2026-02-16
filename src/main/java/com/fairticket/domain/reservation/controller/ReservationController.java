@@ -1,6 +1,7 @@
 package com.fairticket.domain.reservation.controller;
 
 import com.fairticket.domain.reservation.dto.CancellationWindowResponse;
+import com.fairticket.domain.reservation.dto.MyReservationResponse;
 import com.fairticket.domain.reservation.dto.ReservationResponse;
 import com.fairticket.domain.reservation.service.CancellationWindowService;
 import com.fairticket.domain.reservation.service.ReservationCancelService;
@@ -16,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 @Tag(name = "Reservation", description = "예약 조회/취소 API")
 @RestController
@@ -46,6 +49,15 @@ public class ReservationController {
             @Parameter(description = "공연 일정 ID", required = true)
             @RequestParam Long scheduleId) {
         return reservationService.getPendingReservation(userId, scheduleId)
+                .map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "내 예매 내역 조회", description = "마이페이지용. 트랙 타입, 좌석 배정 정보 포함.")
+    @GetMapping("/my")
+    public Mono<ResponseEntity<List<MyReservationResponse>>> getMyReservations(
+            @RequestHeader("X-User-Id") Long userId) {
+        return reservationService.getMyReservations(userId)
+                .collectList()
                 .map(ResponseEntity::ok);
     }
 

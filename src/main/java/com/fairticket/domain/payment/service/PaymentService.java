@@ -10,6 +10,7 @@ import com.fairticket.domain.reservation.constants.ReservationConstants;
 import com.fairticket.domain.reservation.entity.Reservation;
 import com.fairticket.domain.reservation.entity.TrackType;
 import com.fairticket.domain.reservation.repository.ReservationRepository;
+import com.fairticket.domain.reservation.service.LiveTrackService;
 import com.fairticket.domain.reservation.service.LotteryTrackService;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
@@ -35,6 +36,7 @@ public class PaymentService {
     private final PortOneClient portOneClient;
     private final PaymentTimerService timerService;
     private final LotteryTrackService lotteryTrackService;
+    private final LiveTrackService liveTrackService;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
 
     // 결제 준비 (결제창 호출 전).
@@ -132,8 +134,10 @@ public class PaymentService {
                                                 reservation.getScheduleId()))
                                         .thenReturn(payment);
                             }
-                            // Todo: 라이브 트랙: 홀드 해제
-                            return decrementStock.thenReturn(payment);
+                            return decrementStock
+                                    .then(liveTrackService.onPaymentCompleted(
+                                            payment.getReservationId()))
+                                    .thenReturn(payment);
                         }))
                 .doOnSuccess(payment -> log.info("결제 완료: paymentId={}, merchantUid={}",
                         payment.getId(), payment.getMerchantUid()));
@@ -186,7 +190,6 @@ public class PaymentService {
         return Flux.range(0, quantity)
                 .flatMap(i -> redisTemplate.opsForValue().decrement(stockKey))
                 .then()
-                // 카운터가 없으면(키 미존재) 차감 시도 시 음수가 되지 않도록 guard
                 .doOnSuccess(v -> log.info("재고 카운터 차감: scheduleId={}, grade={}, qty=-{}",
                         reservation.getScheduleId(), reservation.getGrade(), quantity));
     }

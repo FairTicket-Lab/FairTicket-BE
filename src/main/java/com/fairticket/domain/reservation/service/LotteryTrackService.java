@@ -313,7 +313,7 @@ public class LotteryTrackService {
     // 모든 등급이 등급별 절반 할당에 도달했을 때만 true. 등급별 집계 쿼리 2회로 조회.
     public Mono<Boolean> hasLotteryQuotaReached(Long scheduleId) {
         Mono<Map<String, Long>> seatCountsMono = seatRepository.findSeatCountByScheduleIdGroupByGrade(scheduleId)
-                .collectMap(GradeSeatCount::getGrade, GradeSeatCount::getCount);
+                .collectMap(GradeSeatCount::getGrade, g -> g.getCount() != null ? g.getCount() : 0L);
         Mono<Map<String, Long>> reservedMono = reservationRepository.findLotteryReservedSumByScheduleIdGroupByGrade(scheduleId)
                 .collectMap(GradeReservedSum::getGrade, GradeReservedSum::getTotal);
         Mono<List<String>> gradesMono = gradeRepository.findByScheduleId(scheduleId)

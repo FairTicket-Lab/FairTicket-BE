@@ -4,7 +4,6 @@ import com.fairticket.domain.queue.dto.QueueEntryResponse;
 import com.fairticket.domain.queue.dto.QueueStatusResponse;
 import com.fairticket.domain.queue.service.QueueService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -38,14 +37,7 @@ public class QueueController {
             @PathVariable Long scheduleId,
             @AuthenticationPrincipal Long userId) {
         return queueService.getQueueStatus(scheduleId, userId)
-                .map(status -> {
-                    if ("READY".equals(status.getStatus())) {
-                        return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
-                                .header("Location", "/api/v1/reservation/" + scheduleId)
-                                .body(status);
-                    }
-                    return ResponseEntity.ok(status);
-                });
+                .map(ResponseEntity::ok);
     }
 
     /**
