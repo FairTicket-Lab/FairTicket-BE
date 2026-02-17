@@ -8,6 +8,8 @@ services:
       POSTGRES_DB: fairticket
       POSTGRES_USER: fairticket
       POSTGRES_PASSWORD: fairticket123
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
     ports:
       - "5433:5432"
     volumes:
