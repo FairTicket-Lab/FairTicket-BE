@@ -6,6 +6,7 @@ import com.fairticket.domain.reservation.dto.ReservationResponse;
 import com.fairticket.domain.reservation.service.LotteryTrackService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -21,7 +22,7 @@ public class LotteryTrackController {
     @PostMapping("/{scheduleId}")
     public Mono<ResponseEntity<ReservationResponse>> createReservation(
             @RequestBody LotteryReservationRequest request,
-            @RequestHeader("X-User-Id") Long userId,
+            @AuthenticationPrincipal Long userId,
             @RequestHeader("X-Queue-Token") String queueToken) {
         return lotteryTrackService.createLotteryReservation(request, userId, queueToken)
                 .map(ResponseEntity::ok);
@@ -31,7 +32,7 @@ public class LotteryTrackController {
     @GetMapping("/reservations/{reservationId}")
     public Mono<ResponseEntity<LotteryResultResponse>> getLotteryResult(
             @PathVariable Long reservationId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return lotteryTrackService.getLotteryReservationResult(reservationId, userId)
                 .map(ResponseEntity::ok);
     }
@@ -40,7 +41,7 @@ public class LotteryTrackController {
     @GetMapping("/reservations")
     public Mono<ResponseEntity<List<LotteryResultResponse>>> getMyLotteryResults(
             @RequestParam Long scheduleId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return lotteryTrackService.getMyLotteryResultsBySchedule(scheduleId, userId)
                 .collectList()
                 .map(ResponseEntity::ok);

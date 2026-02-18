@@ -5,6 +5,7 @@ import com.fairticket.domain.seat.dto.SeatSelectionRequest;
 import com.fairticket.domain.seat.dto.SeatSelectionResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -31,7 +32,7 @@ public class LiveTrackController {
     public Mono<ResponseEntity<SeatSelectionResponse>> selectSeat(
             @PathVariable Long scheduleId,
             @RequestBody SeatSelectionRequest request,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return liveTrackService.selectSeat(scheduleId, request, userId)
                 .map(ResponseEntity::ok);
     }
@@ -42,7 +43,7 @@ public class LiveTrackController {
             @PathVariable Long scheduleId,
             @RequestParam String zone,
             @RequestParam String seatNumber,
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return liveTrackService.releaseSeat(scheduleId, zone, seatNumber, userId)
                 .map(v -> ResponseEntity.noContent().<Void>build());
     }

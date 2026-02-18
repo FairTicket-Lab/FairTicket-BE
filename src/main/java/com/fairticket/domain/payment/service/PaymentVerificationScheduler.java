@@ -39,8 +39,8 @@ public class PaymentVerificationScheduler {
             paymentRepository.findByStatus(PaymentStatus.PENDING.name())
                     .filter(payment -> payment.getCreatedAt() != null
                             && payment.getCreatedAt().isBefore(threshold))
-                    .filter(payment -> payment.getImpUid() != null)
-                    .flatMap(payment -> portOneClient.verifyPayment(payment.getImpUid())
+                    .filter(payment -> payment.getMerchantUid() != null)
+                    .flatMap(payment -> portOneClient.verifyPayment(payment.getMerchantUid())
                             .flatMap(verification -> {
                                 switch (verification.getStatus()) {
                                     case COMPLETED -> {

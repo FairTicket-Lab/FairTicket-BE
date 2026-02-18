@@ -74,6 +74,5 @@ fairticket:
     token-ttl-seconds: 300
     active-timeout-seconds: 60
   portone:
-    api-key: ${PORTONE_API_KEY:test-api-key}
     api-secret: ${PORTONE_API_SECRET:test-api-secret}
-    test-mode: true
+    store-id: ${PORTONE_STORE_ID:test-store-id}

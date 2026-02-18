@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -34,7 +35,7 @@ public class PaymentController {
             @Parameter(description = "예약 ID", required = true)
             @RequestParam Long reservationId,
             @Parameter(description = "사용자 ID", required = true)
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return paymentService.initiatePayment(reservationId, userId)
                 .map(ResponseEntity::ok);
     }
@@ -101,7 +102,7 @@ public class PaymentController {
     @GetMapping("/my")
     public Flux<Payment> getMyPayments(
             @Parameter(description = "사용자 ID", required = true)
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return paymentService.getMyPayments(userId);
     }
 

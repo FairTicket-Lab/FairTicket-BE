@@ -48,7 +48,7 @@ public class LiveTrackService {
         if (request.getGrade() == null || request.getGrade().isBlank()) {
             return Mono.error(new BusinessException(ErrorCode.INVALID_INPUT));
         }
-        // 1. 티켓 오픈 시간 체크 (라이브 트랙: 티켓 오픈 시각부터)
+        // 1. 티켓 오픈 시간 체크
         return scheduleService.findScheduleOrThrow(scheduleId)
                 .flatMap(schedule -> {
                     LocalDateTime now = LocalDateTime.now();
@@ -106,7 +106,8 @@ public class LiveTrackService {
                                 userId, scheduleId, TrackType.LIVE.name())
                         .flatMap(existing -> addSeatToReservation(existing, request.getZone(), request.getSeatNumber()))
                         .switchIfEmpty(Mono.defer(() ->
-                                reservationRepository.existsByUserIdAndScheduleId(userId, scheduleId)
+                                reservationRepository.existsByUserIdAndScheduleIdAndStatusIn(
+                                                userId, scheduleId, "PENDING", "PAID_PENDING_SEAT", "ASSIGNED", "PAID")
                                         .flatMap(exists -> exists
                                                 ? Mono.<Reservation>error(new BusinessException(ErrorCode.ALREADY_PARTICIPATED))
                                                 : Mono.just(Reservation.builder()

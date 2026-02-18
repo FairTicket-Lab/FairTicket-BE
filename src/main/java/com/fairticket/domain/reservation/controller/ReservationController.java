@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -45,7 +46,7 @@ public class ReservationController {
     @GetMapping("/pending")
     public Mono<ResponseEntity<ReservationResponse>> getPendingReservation(
             @Parameter(description = "사용자 ID", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @AuthenticationPrincipal Long userId,
             @Parameter(description = "공연 일정 ID", required = true)
             @RequestParam Long scheduleId) {
         return reservationService.getPendingReservation(userId, scheduleId)
@@ -55,7 +56,7 @@ public class ReservationController {
     @Operation(summary = "내 예매 내역 조회", description = "마이페이지용. 트랙 타입, 좌석 배정 정보 포함.")
     @GetMapping("/my")
     public Mono<ResponseEntity<List<MyReservationResponse>>> getMyReservations(
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return reservationService.getMyReservations(userId)
                 .collectList()
                 .map(ResponseEntity::ok);
@@ -71,7 +72,7 @@ public class ReservationController {
             @Parameter(description = "예약 ID", required = true)
             @PathVariable Long reservationId,
             @Parameter(description = "사용자 ID", required = true)
-            @RequestHeader("X-User-Id") Long userId) {
+            @AuthenticationPrincipal Long userId) {
         return reservationCancelService.cancelReservation(reservationId, userId)
                 .then(Mono.just(ResponseEntity.noContent().<Void>build()));
     }

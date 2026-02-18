@@ -104,8 +104,8 @@ public class PaymentService {
                     }
                     return Mono.just(payment);
                 })
-                // 2. PG사 금액 검증
-                .flatMap(payment -> portOneClient.verifyPayment(request.getImpUid())
+                // 2. PG사 금액 검증 (V2: merchantUid = PortOne paymentId)
+                .flatMap(payment -> portOneClient.verifyPayment(request.getMerchantUid())
                         .flatMap(verification -> {
                             if (!payment.getAmount().equals(verification.getAmount())) {
                                 log.error("결제 금액 불일치: expected={}, actual={}",
@@ -148,7 +148,7 @@ public class PaymentService {
         return paymentRepository.findById(paymentId)
                 .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)))
                 .flatMap(payment -> portOneClient.cancelPayment(
-                        payment.getImpUid(),
+                        payment.getMerchantUid(),
                         payment.getAmount(),
                         reason
                 ).flatMap(result -> {

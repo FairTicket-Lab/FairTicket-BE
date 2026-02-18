@@ -3,6 +3,7 @@ package com.fairticket.domain.payment.service;
 import com.fairticket.domain.payment.entity.PaymentStatus;
 import com.fairticket.global.exception.BusinessException;
 import com.fairticket.global.exception.ErrorCode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,116 +16,89 @@ import java.util.Map;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 @SuppressWarnings("unchecked")
 public class PortOneClient {
 
     private WebClient webClient;
 
-    @Value("${fairticket.portone.api-key}")
-    private String apiKey;
-
     @Value("${fairticket.portone.api-secret}")
     private String apiSecret;
 
-    private static final String PORTONE_API_URL = "https://api.iamport.kr";
+    private static final String PORTONE_API_URL = "https://api.portone.io";
 
     @PostConstruct
     public void init() {
         this.webClient = WebClient.builder()
                 .baseUrl(PORTONE_API_URL)
+                .defaultHeader("Authorization", "PortOne " + apiSecret)
                 .build();
     }
 
-    // 액세스 토큰 발급
-    public Mono<String> getAccessToken() {
-        return webClient.post()
-                .uri("/users/getToken")
-                .bodyValue(Map.of(
-                        "imp_key", apiKey,
-                        "imp_secret", apiSecret
-                ))
+    /**
+     * 결제 검증 (V2)
+     * paymentId = FE에서 PortOne.requestPayment()에 넘긴 paymentId (= 우리 merchantUid)
+     */
+    public Mono<PaymentVerificationResult> verifyPayment(String paymentId) {
+        return webClient.get()
+                .uri("/payments/{paymentId}", paymentId)
                 .retrieve()
                 .bodyToMono(Map.class)
-                .map(response -> {
-                    Map<String, Object> responseBody = (Map<String, Object>) response.get("response");
-                    return (String) responseBody.get("access_token");
+                .<PaymentVerificationResult>map(response -> {
+                    Map<String, Object> amount = (Map<String, Object>) response.get("amount");
+                    return PaymentVerificationResult.builder()
+                            .paymentId((String) response.get("id"))
+                            .transactionId((String) response.get("transactionId"))
+                            .amount(((Number) amount.get("total")).intValue())
+                            .status(mapStatus((String) response.get("status")))
+                            .build();
                 })
-                .doOnSuccess(token -> log.debug("PortOne 액세스 토큰 발급 완료"))
+                .doOnSuccess(result -> log.info("결제 검증 완료: paymentId={}, status={}",
+                        paymentId, result.getStatus()))
                 .onErrorResume(WebClientResponseException.class, e -> {
-                    log.error("PortOne 토큰 발급 실패: status={}, body={}",
-                            e.getStatusCode(), e.getResponseBodyAsString());
-                    return Mono.error(new BusinessException(ErrorCode.INTERNAL_ERROR,
-                            "PortOne 인증 실패: " + e.getResponseBodyAsString()));
+                    log.error("PortOne 결제 검증 실패: paymentId={}, status={}, body={}",
+                            paymentId, e.getStatusCode(), e.getResponseBodyAsString());
+                    return Mono.error(new BusinessException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
+                            "PortOne 결제 검증 실패: " + e.getResponseBodyAsString()));
                 })
                 .onErrorResume(e -> !(e instanceof BusinessException), e -> {
-                    log.error("PortOne 토큰 발급 중 오류: {}", e.getMessage());
-                    return Mono.error(new BusinessException(ErrorCode.INTERNAL_ERROR,
-                            "PortOne 연결 실패: " + e.getMessage()));
-                });
-    }
-
-    // 결제 검증
-    public Mono<PaymentVerificationResult> verifyPayment(String impUid) {
-        return getAccessToken()
-                .flatMap(token -> webClient.get()
-                        .uri("/payments/" + impUid)
-                        .header("Authorization", "Bearer " + token)
-                        .retrieve()
-                        .bodyToMono(Map.class)
-                        .<PaymentVerificationResult>map(response -> {
-                            Map<String, Object> data = (Map<String, Object>) response.get("response");
-                            return PaymentVerificationResult.builder()
-                                    .impUid(impUid)
-                                    .merchantUid((String) data.get("merchant_uid"))
-                                    .amount(((Number) data.get("amount")).intValue())
-                                    .status(mapStatus((String) data.get("status")))
-                                    .build();
-                        })
-                        .onErrorResume(WebClientResponseException.class, e -> {
-                            log.error("PortOne 결제 검증 실패: impUid={}, status={}, body={}",
-                                    impUid, e.getStatusCode(), e.getResponseBodyAsString());
-                            return Mono.error(new BusinessException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
-                                    "PortOne 결제 검증 실패: " + e.getResponseBodyAsString()));
-                        }))
-                .doOnSuccess(result -> log.info("결제 검증 완료: impUid={}, status={}",
-                        impUid, result.getStatus()))
-                .onErrorResume(e -> !(e instanceof BusinessException), e -> {
-                    log.error("PortOne 결제 검증 중 오류: impUid={}, error={}", impUid, e.getMessage());
+                    log.error("PortOne 결제 검증 중 오류: paymentId={}, error={}", paymentId, e.getMessage());
                     return Mono.error(new BusinessException(ErrorCode.INTERNAL_ERROR,
                             "PortOne 결제 검증 오류: " + e.getMessage()));
                 });
     }
 
-    // 결제 취소 (환불)
-    public Mono<RefundResult> cancelPayment(String impUid, int amount, String reason) {
-        return getAccessToken()
-                .flatMap(token -> webClient.post()
-                        .uri("/payments/cancel")
-                        .header("Authorization", "Bearer " + token)
-                        .bodyValue(Map.of(
-                                "imp_uid", impUid,
-                                "amount", amount,
-                                "reason", reason
-                        ))
-                        .retrieve()
-                        .bodyToMono(Map.class)
-                        .<RefundResult>map(response -> {
-                            Integer code = (Integer) response.get("code");
-                            return RefundResult.builder()
-                                    .success(code == 0)
-                                    .message((String) response.get("message"))
-                                    .build();
-                        })
-                        .onErrorResume(WebClientResponseException.class, e -> {
-                            log.error("PortOne 환불 실패: impUid={}, status={}, body={}",
-                                    impUid, e.getStatusCode(), e.getResponseBodyAsString());
-                            return Mono.error(new BusinessException(ErrorCode.REFUND_FAILED,
-                                    "PortOne 환불 실패: " + e.getResponseBodyAsString()));
-                        }))
-                .doOnSuccess(result -> log.info("환불 처리 완료: impUid={}, success={}",
-                        impUid, result.isSuccess()))
+    /**
+     * 결제 취소/환불 (V2)
+     * paymentId = 우리 merchantUid
+     */
+    public Mono<RefundResult> cancelPayment(String paymentId, int amount, String reason) {
+        return webClient.post()
+                .uri("/payments/{paymentId}/cancel", paymentId)
+                .bodyValue(Map.of(
+                        "amount", amount,
+                        "reason", reason
+                ))
+                .retrieve()
+                .bodyToMono(Map.class)
+                .<RefundResult>map(response -> {
+                    Map<String, Object> cancellation = (Map<String, Object>) response.get("cancellation");
+                    String status = cancellation != null ? (String) cancellation.get("status") : "FAILED";
+                    return RefundResult.builder()
+                            .success("SUCCEEDED".equals(status))
+                            .message(reason)
+                            .build();
+                })
+                .doOnSuccess(result -> log.info("환불 처리 완료: paymentId={}, success={}",
+                        paymentId, result.isSuccess()))
+                .onErrorResume(WebClientResponseException.class, e -> {
+                    log.error("PortOne 환불 실패: paymentId={}, status={}, body={}",
+                            paymentId, e.getStatusCode(), e.getResponseBodyAsString());
+                    return Mono.error(new BusinessException(ErrorCode.REFUND_FAILED,
+                            "PortOne 환불 실패: " + e.getResponseBodyAsString()));
+                })
                 .onErrorResume(e -> !(e instanceof BusinessException), e -> {
-                    log.error("PortOne 환불 중 오류: impUid={}, error={}", impUid, e.getMessage());
+                    log.error("PortOne 환불 중 오류: paymentId={}, error={}", paymentId, e.getMessage());
                     return Mono.error(new BusinessException(ErrorCode.REFUND_FAILED,
                             "PortOne 환불 오류: " + e.getMessage()));
                 });
@@ -132,9 +106,9 @@ public class PortOneClient {
 
     private PaymentStatus mapStatus(String portoneStatus) {
         return switch (portoneStatus) {
-            case "paid"      -> PaymentStatus.COMPLETED;
-            case "cancelled" -> PaymentStatus.REFUNDED;
-            case "failed"    -> PaymentStatus.FAILED;
+            case "PAID"      -> PaymentStatus.COMPLETED;
+            case "CANCELLED" -> PaymentStatus.REFUNDED;
+            case "FAILED"    -> PaymentStatus.FAILED;
             default          -> PaymentStatus.PENDING;
         };
     }
@@ -142,8 +116,8 @@ public class PortOneClient {
     @lombok.Builder
     @lombok.Getter
     public static class PaymentVerificationResult {
-        private String impUid;
-        private String merchantUid;
+        private String paymentId;
+        private String transactionId;
         private Integer amount;
         private PaymentStatus status;
     }

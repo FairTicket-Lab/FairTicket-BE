@@ -68,7 +68,7 @@ public class LotteryTrackService {
                     }
                     return queueTokenService.consumeToken(userId, request.getScheduleId()).then();
                 })
-                // 1. 추첨 트랙 시간대 체크 (티켓 오픈 30분 전 ~ 티켓 오픈 20분 전: 진입 가능, 20분~15분: 진입 마감·기존 예약 결제만 가능)
+                // 1. 추첨 트랙 시간대 체크: ticketOpenAt-30분 ~ ticketOpenAt-20분 윈도우만 진입 허용
                 .then(scheduleService.findScheduleOrThrow(request.getScheduleId()))
                 .flatMap(schedule -> {
                     LocalDateTime now = LocalDateTime.now();
@@ -85,7 +85,9 @@ public class LotteryTrackService {
                 // 2. 중복 참여 체크 (추첨 결제 완료자면 라이브 참여 불가 + 해당 회차에 이미 예약 있으면 불가)
                 .flatMap(schedule -> canParticipate(request.getScheduleId(), userId)
                         .flatMap(can -> can ? Mono.just(schedule) : Mono.<Schedule>error(new BusinessException(ErrorCode.ALREADY_PARTICIPATED))))
-                .flatMap(schedule -> reservationRepository.existsByUserIdAndScheduleId(userId, request.getScheduleId())
+                .flatMap(schedule -> reservationRepository.existsByUserIdAndScheduleIdAndStatusIn(
+                                userId, request.getScheduleId(),
+                                "PENDING", "PAID_PENDING_SEAT", "ASSIGNED", "PAID")
                         .flatMap(exists -> exists ? Mono.<Schedule>error(new BusinessException(ErrorCode.ALREADY_PARTICIPATED)) : Mono.just(schedule)))
                 // 2-1. 추첨 1인당 최대 2장 제한
                 .flatMap(schedule -> reservationRepository.sumLotteryQuantityByUserAndSchedule(request.getScheduleId(), userId)

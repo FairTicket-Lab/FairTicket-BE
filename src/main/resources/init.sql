@@ -1,9 +1,10 @@
--- =============================================         
-  -- FairTicket ERD v3.1
-  -- =============================================                                                          
-   
-  -- 사용자                                                                                                 
-  CREATE TABLE IF NOT EXISTS users (                        
+-- =============================================
+  -- FairTicket 시연용 시드 데이터
+  -- =============================================
+  SET timezone = 'Asia/Seoul';
+
+  -- 사용자
+  CREATE TABLE IF NOT EXISTS users (
       id BIGSERIAL PRIMARY KEY,
       email VARCHAR(255) UNIQUE NOT NULL,
       password VARCHAR(255) NOT NULL,
@@ -24,7 +25,7 @@
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 공연 회차 (total_seats는 SUM(zones.seat_count) 또는 COUNT(seats)와 동기화해 두는 것을 권장)
+  -- 공연 회차
   CREATE TABLE IF NOT EXISTS schedules (
       id BIGSERIAL PRIMARY KEY,
       concert_id BIGINT NOT NULL REFERENCES concerts(id),
@@ -36,7 +37,7 @@
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 등급 설정 (등급별 가격). 좌석 수는 zones 합산으로 계산
+  -- 등급 설정
   CREATE TABLE IF NOT EXISTS grades (
       id BIGSERIAL PRIMARY KEY,
       schedule_id BIGINT NOT NULL REFERENCES schedules(id),
@@ -45,7 +46,7 @@
       UNIQUE(schedule_id, grade)
   );
 
-  -- 구역 설정 (구역별 등급·좌석 수). 예: VIP-A(200석), S-1(100석)
+  -- 구역 설정
   CREATE TABLE IF NOT EXISTS zones (
       id BIGSERIAL PRIMARY KEY,
       schedule_id BIGINT NOT NULL REFERENCES schedules(id),
@@ -55,7 +56,7 @@
       UNIQUE(schedule_id, zone)
   );
 
-  -- 좌석 (구역별 좌석 번호)
+  -- 좌석
   CREATE TABLE IF NOT EXISTS seats (
       id BIGSERIAL PRIMARY KEY,
       schedule_id BIGINT NOT NULL REFERENCES schedules(id),
@@ -99,7 +100,7 @@
   CREATE UNIQUE INDEX IF NOT EXISTS uq_reservation_seats_seat_id
       ON reservation_seats(seat_id) WHERE seat_id IS NOT NULL;
 
-  -- 결제 (예약당 성공 결제 1건 제한: 동일 reservation_id에 status='COMPLETED'는 1건만 허용)
+  -- 결제
   CREATE TABLE IF NOT EXISTS payments (
       id BIGSERIAL PRIMARY KEY,
       reservation_id BIGINT NOT NULL REFERENCES reservations(id),
@@ -136,208 +137,163 @@
   CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 
   -- =============================================
-  -- 테스트 데이터
+  -- 시연 데이터
   -- =============================================
 
-  -- 사용자
-  -- 비밀번호: test1~3 = "password", admin = "admin" (bcrypt)
+  -- 관리자 + 테스트 유저 (비밀번호: bcrypt "password")
   INSERT INTO users (email, password, name, phone, role) VALUES
-      ('test1@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '테스트유저1',
-  '010-1234-5678', 'USER'),
-      ('test2@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '테스트유저2',
-  '010-2345-6789', 'USER'),
-      ('test3@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '테스트유저3',
-  '010-3456-7890', 'USER'),
-      ('admin@test.com', '$2b$10$PBwV7jUmNIf1L7sDJJgWNe82lJclUrxVZlN8jdwf0TGE51J0THE1W', '관리자',
-  '010-0000-0000', 'ADMIN')
+      ('admin@test.com', '$2b$10$PBwV7jUmNIf1L7sDJJgWNe82lJclUrxVZlN8jdwf0TGE51J0THE1W', '관리자', '010-0000-0000', 'ADMIN'),
+      ('user@test.com', '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC', '시연유저', '010-1111-1111', 'USER')
   ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password;
 
-  -- 공연
+  -- 데모 유저 100명 (대기열 시뮬레이션용, 비밀번호: "password")
+  INSERT INTO users (email, password, name, phone, role)
+  SELECT
+      'demo' || n || '@test.com',
+      '$2b$10$b4/OZ/TPWsYYHXCFNRhbhuLpYwuTpsuqvcVI7qD6wYbKhqUBd45cC',
+      '대기유저' || n,
+      '010-' || LPAD((n / 100)::text, 4, '0') || '-' || LPAD((n % 10000)::text, 4, '0'),
+      'USER'
+  FROM generate_series(1, 100) n
+  ON CONFLICT (email) DO NOTHING;
+
+  -- =============================================
+  -- 공연 6개
+  -- =============================================
   INSERT INTO concerts (title, artist, venue) VALUES
-      ('2026 아이유 콘서트', '아이유', '잠실종합운동장'),
-      ('2026 블랙핑크 월드투어', 'BLACKPINK', '올림픽공원 체조경기장')
+      ('2026 아이유 콘서트 : The Golden Hour', '아이유', '잠실종합운동장'),
+      ('2026 BLACKPINK WORLD TOUR', 'BLACKPINK', '올림픽공원 체조경기장'),
+      ('2026 BTS YET TO COME', 'BTS', '고척스카이돔'),
+      ('LUCY LIVE IN SEOUL', 'LUCY', '올림픽홀'),
+      ('2026 aespa SYNK : PARALLEL LINE', 'aespa', 'KSPO DOME'),
+      ('SEVENTEEN WORLD TOUR BE THE SUN', 'SEVENTEEN', '잠실실내체육관')
   ON CONFLICT DO NOTHING;
 
-  -- 공연 회차
-  -- total_seats = zones 합산: VIP(8×200+11×100=2700) + S(4×100+14×100=1800) + A(6×100=600) = 5100
+  -- =============================================
+  -- 스케줄 (7개)
+  -- =============================================
+  -- schedule 1: 아이유 OPEN (시연 메인 — 라이브 트랙 데모용)
+  -- schedule 2: 블랙핑크 OPEN
+  -- schedule 3: BTS UPCOMING
+  -- schedule 4: LUCY OPEN
+  -- schedule 5: aespa OPEN
+  -- schedule 6: 세븐틴 UPCOMING
+  -- schedule 7: 아이유 CLOSED (과거 공연)
   INSERT INTO schedules (concert_id, date_time, total_seats, ticket_open_at, ticket_close_at, status) VALUES
-      (1, '2026-03-15 19:00:00', 5100, NOW() + INTERVAL '9 hours 25 minutes', NOW() + INTERVAL '11 hours', 'OPEN'),
-      (2, '2026-04-20 18:00:00', 5100, NOW() + INTERVAL '9 hours' + INTERVAL '1 day', NOW() + INTERVAL '9 hours' + INTERVAL '2 days', 'UPCOMING'),
+      (1, '2026-03-15 19:00:00', 5100, NOW() - INTERVAL '5 minutes', NOW() + INTERVAL '7 days', 'OPEN'),
+      (2, '2026-04-20 18:00:00', 5100, NOW() - INTERVAL '3 minutes', NOW() + INTERVAL '7 days', 'OPEN'),
+      (3, '2026-05-10 19:00:00', 5100, NOW() + INTERVAL '7 days',    NOW() + INTERVAL '14 days', 'UPCOMING'),
+      (4, '2026-03-22 19:00:00', 3000, NOW() - INTERVAL '2 minutes', NOW() + INTERVAL '7 days', 'OPEN'),
+      (5, '2026-04-05 18:00:00', 5100, NOW() - INTERVAL '4 minutes', NOW() + INTERVAL '7 days', 'OPEN'),
+      (6, '2026-05-20 18:00:00', 5100, NOW() + INTERVAL '14 days',   NOW() + INTERVAL '21 days', 'UPCOMING'),
       (1, '2026-01-10 19:00:00', 5100, '2025-12-01 20:00:00', '2026-01-10 18:00:00', 'CLOSED')
   ON CONFLICT DO NOTHING;
 
-  -- 등급 설정 (TIMELINE: VIP, S, A)
+  -- =============================================
+  -- 등급 (각 스케줄별 VIP/S/A)
+  -- =============================================
   INSERT INTO grades (schedule_id, grade, price) VALUES
-      (1, 'VIP', 120000),
-      (1, 'S', 90000),
-      (1, 'A', 60000),
-      (2, 'VIP', 150000),
-      (2, 'S', 100000),
-      (2, 'A', 70000),
-      (3, 'VIP', 120000),
-      (3, 'S', 90000),
-      (3, 'A', 60000)
+      -- 아이유 (schedule 1)
+      (1, 'VIP', 154000), (1, 'S', 121000), (1, 'A', 88000),
+      -- 블랙핑크 (schedule 2)
+      (2, 'VIP', 176000), (2, 'S', 143000), (2, 'A', 110000),
+      -- BTS (schedule 3)
+      (3, 'VIP', 165000), (3, 'S', 132000), (3, 'A', 99000),
+      -- LUCY (schedule 4)
+      (4, 'VIP', 132000), (4, 'S', 99000),  (4, 'A', 66000),
+      -- aespa (schedule 5)
+      (5, 'VIP', 143000), (5, 'S', 110000), (5, 'A', 77000),
+      -- 세븐틴 (schedule 6)
+      (6, 'VIP', 154000), (6, 'S', 121000), (6, 'A', 88000),
+      -- 아이유 과거 (schedule 7)
+      (7, 'VIP', 154000), (7, 'S', 121000), (7, 'A', 88000)
   ON CONFLICT (schedule_id, grade) DO NOTHING;
 
-  -- 구역 설정 (schedule_id, zone, grade, seat_count). VIP-{A~H,3~13}, S-{1,2,14,15,27~40}, A-{24~26,41~43}
-  INSERT INTO zones (schedule_id, zone, grade, seat_count) VALUES
-      (1, 'A', 'VIP', 200), (1, 'B', 'VIP', 200), (1, 'C', 'VIP', 200), (1, 'D', 'VIP', 200), (1, 'E',
-  'VIP', 200), (1, 'F', 'VIP', 200), (1, 'G', 'VIP', 200), (1, 'H', 'VIP', 200),
-      (1, '3', 'VIP', 100), (1, '4', 'VIP', 100), (1, '5', 'VIP', 100), (1, '6', 'VIP', 100), (1, '7',
-  'VIP', 100), (1, '8', 'VIP', 100), (1, '9', 'VIP', 100), (1, '10', 'VIP', 100), (1, '11', 'VIP', 100), (1,
-   '12', 'VIP', 100), (1, '13', 'VIP', 100),
-      (1, '1', 'S', 100), (1, '2', 'S', 100), (1, '14', 'S', 100), (1, '15', 'S', 100),
-      (1, '27', 'S', 100), (1, '28', 'S', 100), (1, '29', 'S', 100), (1, '30', 'S', 100), (1, '31', 'S',
-  100), (1, '32', 'S', 100), (1, '33', 'S', 100), (1, '34', 'S', 100), (1, '35', 'S', 100), (1, '36', 'S',
-  100), (1, '37', 'S', 100), (1, '38', 'S', 100), (1, '39', 'S', 100), (1, '40', 'S', 100),
-      (1, '24', 'A', 100), (1, '25', 'A', 100), (1, '26', 'A', 100), (1, '41', 'A', 100), (1, '42', 'A',
-  100), (1, '43', 'A', 100),
-      (2, 'A', 'VIP', 200), (2, 'B', 'VIP', 200), (2, 'C', 'VIP', 200), (2, 'D', 'VIP', 200), (2, 'E',
-  'VIP', 200), (2, 'F', 'VIP', 200), (2, 'G', 'VIP', 200), (2, 'H', 'VIP', 200),
-      (2, '3', 'VIP', 100), (2, '4', 'VIP', 100), (2, '5', 'VIP', 100), (2, '6', 'VIP', 100), (2, '7',
-  'VIP', 100), (2, '8', 'VIP', 100), (2, '9', 'VIP', 100), (2, '10', 'VIP', 100), (2, '11', 'VIP', 100), (2,
-   '12', 'VIP', 100), (2, '13', 'VIP', 100),
-      (2, '1', 'S', 100), (2, '2', 'S', 100), (2, '14', 'S', 100), (2, '15', 'S', 100),
-      (2, '27', 'S', 100), (2, '28', 'S', 100), (2, '29', 'S', 100), (2, '30', 'S', 100), (2, '31', 'S',
-  100), (2, '32', 'S', 100), (2, '33', 'S', 100), (2, '34', 'S', 100), (2, '35', 'S', 100), (2, '36', 'S',
-  100), (2, '37', 'S', 100), (2, '38', 'S', 100), (2, '39', 'S', 100), (2, '40', 'S', 100),
-      (2, '24', 'A', 100), (2, '25', 'A', 100), (2, '26', 'A', 100), (2, '41', 'A', 100), (2, '42', 'A',
-  100), (2, '43', 'A', 100),
-      (3, 'A', 'VIP', 200), (3, 'B', 'VIP', 200), (3, 'C', 'VIP', 200), (3, 'D', 'VIP', 200), (3, 'E',
-  'VIP', 200), (3, 'F', 'VIP', 200), (3, 'G', 'VIP', 200), (3, 'H', 'VIP', 200),
-      (3, '3', 'VIP', 100), (3, '4', 'VIP', 100), (3, '5', 'VIP', 100), (3, '6', 'VIP', 100), (3, '7',
-  'VIP', 100), (3, '8', 'VIP', 100), (3, '9', 'VIP', 100), (3, '10', 'VIP', 100), (3, '11', 'VIP', 100), (3,
-   '12', 'VIP', 100), (3, '13', 'VIP', 100),
-      (3, '1', 'S', 100), (3, '2', 'S', 100), (3, '14', 'S', 100), (3, '15', 'S', 100),
-      (3, '27', 'S', 100), (3, '28', 'S', 100), (3, '29', 'S', 100), (3, '30', 'S', 100), (3, '31', 'S',
-  100), (3, '32', 'S', 100), (3, '33', 'S', 100), (3, '34', 'S', 100), (3, '35', 'S', 100), (3, '36', 'S',
-  100), (3, '37', 'S', 100), (3, '38', 'S', 100), (3, '39', 'S', 100), (3, '40', 'S', 100),
-      (3, '24', 'A', 100), (3, '25', 'A', 100), (3, '26', 'A', 100), (3, '41', 'A', 100), (3, '42', 'A',
-  100), (3, '43', 'A', 100)
+  -- =============================================
+  -- 구역 (OPEN 스케줄 1,2,4,5에 풀 구역, 나머지는 축소)
+  -- VIP: A~H(200석) + 3~13(100석) = 2700석
+  -- S: 1,2,14,15,27~40(18개 × 100석) = 1800석
+  -- A: 24~26,41~43(6개 × 100석) = 600석
+  -- =============================================
+
+  -- 풀 구역 생성 함수 (schedule 1, 2, 5)
+  INSERT INTO zones (schedule_id, zone, grade, seat_count)
+  SELECT s.id, z.zone, z.grade, z.seat_count
+  FROM (VALUES (1), (2), (5)) AS s(id)
+  CROSS JOIN (
+      VALUES
+          ('A','VIP',200),('B','VIP',200),('C','VIP',200),('D','VIP',200),
+          ('E','VIP',200),('F','VIP',200),('G','VIP',200),('H','VIP',200),
+          ('3','VIP',100),('4','VIP',100),('5','VIP',100),('6','VIP',100),
+          ('7','VIP',100),('8','VIP',100),('9','VIP',100),('10','VIP',100),
+          ('11','VIP',100),('12','VIP',100),('13','VIP',100),
+          ('1','S',100),('2','S',100),('14','S',100),('15','S',100),
+          ('27','S',100),('28','S',100),('29','S',100),('30','S',100),
+          ('31','S',100),('32','S',100),('33','S',100),('34','S',100),
+          ('35','S',100),('36','S',100),('37','S',100),('38','S',100),
+          ('39','S',100),('40','S',100),
+          ('24','A',100),('25','A',100),('26','A',100),
+          ('41','A',100),('42','A',100),('43','A',100)
+  ) AS z(zone, grade, seat_count)
   ON CONFLICT (schedule_id, zone) DO NOTHING;
 
-  -- 좌석 (schedule_id, grade, zone, seat_number). 예시: 구역 A 일부, 구역 1 일부 등
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status) VALUES
-      (1, 'VIP', 'A', '1', 120000, 'AVAILABLE'), (1, 'VIP', 'A', '2', 120000, 'HELD'), (1, 'VIP', 'A', '3',
-  120000, 'SOLD'), (1, 'VIP', 'A', '4', 120000, 'AVAILABLE'), (1, 'VIP', 'A', '5', 120000, 'AVAILABLE'),
-      (1, 'VIP', 'B', '1', 120000, 'AVAILABLE'), (1, 'VIP', 'B', '2', 120000, 'AVAILABLE'), (1, 'VIP', 'B',
-  '3', 120000, 'HELD'),
-      (1, 'S', '1', '1', 90000, 'AVAILABLE'), (1, 'S', '1', '2', 90000, 'SOLD'), (1, 'S', '1', '3', 90000,
-  'AVAILABLE'), (1, 'S', '2', '1', 90000, 'HELD'),
-      (1, 'A', '24', '1', 60000, 'SOLD'), (1, 'A', '24', '2', 60000, 'AVAILABLE'), (1, 'A', '41', '1',
-  60000, 'AVAILABLE'), (1, 'A', '41', '2', 60000, 'HELD'),
-      (2, 'VIP', 'A', '1', 150000, 'AVAILABLE'), (2, 'VIP', 'A', '2', 150000, 'SOLD'), (2, 'VIP', 'B', '1',
-  150000, 'HELD'),
-      (2, 'S', '1', '1', 100000, 'AVAILABLE'), (2, 'S', '1', '2', 100000, 'SOLD'), (2, 'A', '24', '1',
-  70000, 'AVAILABLE'), (2, 'A', '41', '1', 70000, 'HELD'),
-      (3, 'VIP', 'A', '1', 120000, 'HELD'), (3, 'VIP', 'B', '1', 120000, 'AVAILABLE'), (3, 'S', '1', '1',
-  90000, 'AVAILABLE'), (3, 'A', '24', '1', 60000, 'SOLD')
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+  -- LUCY (schedule 4) — 소규모 공연장 (구역 축소)
+  INSERT INTO zones (schedule_id, zone, grade, seat_count) VALUES
+      (4, 'A', 'VIP', 200), (4, 'B', 'VIP', 200), (4, 'C', 'VIP', 200), (4, 'D', 'VIP', 200),
+      (4, '3', 'VIP', 100), (4, '4', 'VIP', 100), (4, '5', 'VIP', 100), (4, '6', 'VIP', 100),
+      (4, '1', 'S', 100), (4, '2', 'S', 100), (4, '14', 'S', 100), (4, '15', 'S', 100),
+      (4, '27', 'S', 100), (4, '28', 'S', 100), (4, '29', 'S', 100), (4, '30', 'S', 100),
+      (4, '24', 'A', 100), (4, '25', 'A', 100), (4, '41', 'A', 100), (4, '42', 'A', 100)
+  ON CONFLICT (schedule_id, zone) DO NOTHING;
 
-  -- 좌석 추가 (schedule 1 — 구역별 20석으로 확장)
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'VIP', 'A', n::text, 120000, 'AVAILABLE' FROM generate_series(6, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
-
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'VIP', 'B', n::text, 120000, 'AVAILABLE' FROM generate_series(4, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
-
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'VIP', 'C', n::text, 120000, 'AVAILABLE' FROM generate_series(1, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
-
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'S', '1', n::text, 90000, 'AVAILABLE' FROM generate_series(4, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
-
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'S', '2', n::text, 90000, 'AVAILABLE' FROM generate_series(2, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
-
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'A', '24', n::text, 60000, 'AVAILABLE' FROM generate_series(3, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
-
-  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
-  SELECT 1, 'A', '41', n::text, 60000, 'AVAILABLE' FROM generate_series(3, 20) n
-  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
+  -- UPCOMING/CLOSED 스케줄 (3, 6, 7) — 최소 구역만
+  INSERT INTO zones (schedule_id, zone, grade, seat_count)
+  SELECT s.id, z.zone, z.grade, z.seat_count
+  FROM (VALUES (3), (6), (7)) AS s(id)
+  CROSS JOIN (
+      VALUES
+          ('A','VIP',200),('B','VIP',200),('C','VIP',200),
+          ('1','S',100),('2','S',100),
+          ('24','A',100),('25','A',100)
+  ) AS z(zone, grade, seat_count)
+  ON CONFLICT (schedule_id, zone) DO NOTHING;
 
   -- =============================================
-  -- 테스트 트랜잭션 데이터 (예약 + 좌석배정 + 결제)
+  -- 좌석 생성 (OPEN 스케줄에 구역당 20석씩)
   -- =============================================
 
-  -- 예약 1: user1 + schedule1, 추첨 결제완료 (PAID)
-  INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at,
-  updated_at) VALUES
-      (1, 1, 'VIP', 'LOTTERY', 'PAID', 1, '2026-02-10 10:00:00', '2026-02-10 10:05:00')
-  ON CONFLICT (user_id, schedule_id) DO NOTHING;
+  -- schedule 1 (아이유 — 시연 메인)
+  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+  SELECT 1, z.grade, z.zone, n::text, g.price, 'AVAILABLE'
+  FROM zones z
+  JOIN grades g ON g.schedule_id = z.schedule_id AND g.grade = z.grade
+  CROSS JOIN generate_series(1, 20) n
+  WHERE z.schedule_id = 1
+  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
 
-  -- 예약 2: user2 + schedule1, 라이브 결제대기 (PENDING)
-  INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at,
-  updated_at) VALUES
-      (2, 1, 'S', 'LIVE', 'PENDING', 2, '2026-02-10 11:00:00', '2026-02-10 11:00:00')
-  ON CONFLICT (user_id, schedule_id) DO NOTHING;
+  -- schedule 2 (블랙핑크)
+  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+  SELECT 2, z.grade, z.zone, n::text, g.price, 'AVAILABLE'
+  FROM zones z
+  JOIN grades g ON g.schedule_id = z.schedule_id AND g.grade = z.grade
+  CROSS JOIN generate_series(1, 20) n
+  WHERE z.schedule_id = 2
+  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
 
-  -- 예약 3: user3 + schedule1, 추첨 대기중 (PAID_PENDING_SEAT)
-  INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at,
-  updated_at) VALUES
-      (3, 1, 'VIP', 'LOTTERY', 'PAID_PENDING_SEAT', 1, '2026-02-10 10:30:00', '2026-02-10 10:35:00')
-  ON CONFLICT (user_id, schedule_id) DO NOTHING;
+  -- schedule 4 (LUCY)
+  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+  SELECT 4, z.grade, z.zone, n::text, g.price, 'AVAILABLE'
+  FROM zones z
+  JOIN grades g ON g.schedule_id = z.schedule_id AND g.grade = z.grade
+  CROSS JOIN generate_series(1, 20) n
+  WHERE z.schedule_id = 4
+  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
 
-  -- 예약 4: user1 + schedule2, 추첨 취소됨 (CANCELLED)
-  INSERT INTO reservations (user_id, schedule_id, grade, track_type, status, quantity, created_at,
-  updated_at) VALUES
-      (1, 2, 'VIP', 'LOTTERY', 'CANCELLED', 1, '2026-02-20 20:00:00', '2026-02-20 20:30:00')
-  ON CONFLICT (user_id, schedule_id) DO NOTHING;
-
-  -- 예약-좌석: 예약1 (user1 VIP A-4 배정완료)
-  INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, assigned_at,
-  created_at)
-  SELECT 1, s.id, 'A', '4', 'ASSIGNED', '2026-02-10 10:05:00', '2026-02-10 10:00:00'
-  FROM seats s WHERE s.schedule_id = 1 AND s.zone = 'A' AND s.seat_number = '4'
-  ON CONFLICT DO NOTHING;
-
-  -- 예약-좌석: 예약2 (user2 S 1-4, 1-5 대기중)
-  INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, created_at)
-  SELECT 2, s.id, '1', '4', 'PENDING', '2026-02-10 11:00:00'
-  FROM seats s WHERE s.schedule_id = 1 AND s.zone = '1' AND s.seat_number = '4'
-  ON CONFLICT DO NOTHING;
-
-  INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, created_at)
-  SELECT 2, s.id, '1', '5', 'PENDING', '2026-02-10 11:00:00'
-  FROM seats s WHERE s.schedule_id = 1 AND s.zone = '1' AND s.seat_number = '5'
-  ON CONFLICT DO NOTHING;
-
-  -- 예약-좌석: 예약3 (user3 VIP B-1 대기중)
-  INSERT INTO reservation_seats (reservation_id, seat_id, zone, seat_number, status, created_at)
-  SELECT 3, s.id, 'B', '1', 'PENDING', '2026-02-10 10:30:00'
-  FROM seats s WHERE s.schedule_id = 1 AND s.zone = 'B' AND s.seat_number = '1'
-  ON CONFLICT DO NOTHING;
-
-  -- 결제 1: 예약1 결제완료 (COMPLETED)
-  INSERT INTO payments (reservation_id, merchant_uid, imp_uid, amount, status, paid_at, created_at,
-  updated_at) VALUES
-      (1, 'FAIR_1707500000_test0001', 'imp_test_0001', 120000, 'COMPLETED', '2026-02-10 10:05:00',
-  '2026-02-10 10:00:00', '2026-02-10 10:05:00')
-  ON CONFLICT (merchant_uid) DO NOTHING;
-
-  -- 결제 2: 예약2 결제대기 (PENDING) — imp_uid 미발급 상태
-  INSERT INTO payments (reservation_id, merchant_uid, amount, status, created_at, updated_at) VALUES
-      (2, 'FAIR_1707500000_test0002', 180000, 'PENDING', '2026-02-10 11:00:00', '2026-02-10 11:00:00')
-  ON CONFLICT (merchant_uid) DO NOTHING;
-
-  -- 결제 3: 예약3 결제완료 (COMPLETED, 좌석 배정 대기중)
-  INSERT INTO payments (reservation_id, merchant_uid, imp_uid, amount, status, paid_at, created_at,
-  updated_at) VALUES
-      (3, 'FAIR_1707500000_test0003', 'imp_test_0003', 120000, 'COMPLETED', '2026-02-10 10:35:00',
-  '2026-02-10 10:30:00', '2026-02-10 10:35:00')
-  ON CONFLICT (merchant_uid) DO NOTHING;
-
-  -- 좌석 상태 동기화: 예약된 좌석 SOLD 처리
-  UPDATE seats SET status = 'SOLD' WHERE schedule_id = 1 AND zone = 'A' AND seat_number = '4' AND status !=
-  'SOLD';
-  UPDATE seats SET status = 'HELD' WHERE schedule_id = 1 AND zone = '1' AND seat_number IN ('4','5') AND
-  status = 'AVAILABLE';
-  UPDATE seats SET status = 'HELD' WHERE schedule_id = 1 AND zone = 'B' AND seat_number = '1' AND status =
-  'AVAILABLE';
+  -- schedule 5 (aespa)
+  INSERT INTO seats (schedule_id, grade, zone, seat_number, price, status)
+  SELECT 5, z.grade, z.zone, n::text, g.price, 'AVAILABLE'
+  FROM zones z
+  JOIN grades g ON g.schedule_id = z.schedule_id AND g.grade = z.grade
+  CROSS JOIN generate_series(1, 20) n
+  WHERE z.schedule_id = 5
+  ON CONFLICT (schedule_id, zone, seat_number) DO NOTHING;
