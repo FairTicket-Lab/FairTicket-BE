@@ -19,7 +19,7 @@
 | 양정우 (PM / PL) <br> [@mrangjw](https://github.com/mrangjw) | 권세빈 (Frontend) <br> [@sebeeeen](https://github.com/sebeeeen) | 임수현 (Backend) <br> [@suhyenim](https://github.com/suhyenim) |
 |:---:|:---:|:---:|
 | <img width="150" src="https://avatars.githubusercontent.com/u/157506327?v=4"/> | <img width="150" src="https://avatars.githubusercontent.com/u/128478309?v=4"/> | <img width="150" src="https://avatars.githubusercontent.com/u/100345983?v=4"/> |
-| 프로젝트 기획 및 총괄<br>Redis 대기열 시스템 구현<br>JWT 인증 및 보안<br>Rate Limiting | 예매 시스템 개발 (듀얼 트랙)<br>좌석 배정 로직 구현<br>동시성 제어 (분산 락) | 결제 시스템 연동 (PortOne)<br>Kafka 이벤트 처리<br>인프라 구성 |
+| 프로젝트 기획 및 총괄<br>Redis 대기열 시스템 구현<br>JWT 인증 및 보안<br>Rate Limiting | 결제 시스템 연동 (PortOne)<br>Kafka 이벤트 처리<br>문서 자료 제작 | 예매 시스템 개발 (듀얼 트랙)<br>좌석 배정 로직 구현<br>동시성 제어 (분산 락)<br>인프라 구성 |
 
 <br/>
 
