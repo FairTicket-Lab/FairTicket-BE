@@ -1,7 +1,7 @@
 # FairTicket-BE
 ## 대용량 트래픽 처리 공정 티켓팅 시스템 백엔드
 > Spring WebFlux + Redis + Kafka 기반 리액티브 티켓팅 플랫폼 <br>
-> 듀얼 트랙(추첨/선착순) 예매 시스템으로 공정한 티켓 구매 환경 제공 <br>
+> 듀얼 트랙(사전 예매/실시간 선착순) 방식으로 트래픽을 분산하고 공정성을 강화하는 구조 <br>
 > 25.01.20 - 25.02.19
 
 ---
@@ -19,21 +19,21 @@
 | 양정우 (PM / PL) <br> [@mrangjw](https://github.com/mrangjw) | 권세빈 (Frontend) <br> [@sebeeeen](https://github.com/sebeeeen) | 임수현 (Backend) <br> [@suhyenim](https://github.com/suhyenim) |
 |:---:|:---:|:---:|
 | <img width="150" src="https://avatars.githubusercontent.com/u/157506327?v=4"/> | <img width="150" src="https://avatars.githubusercontent.com/u/128478309?v=4"/> | <img width="150" src="https://avatars.githubusercontent.com/u/100345983?v=4"/> |
-| 프로젝트 기획 및 총괄<br>백엔드 API 설계 및 구현<br>듀얼 트랙 예매 시스템 개발<br>Redis 대기열 및 동시성 제어 | 프론트엔드 개발<br>Vue.js 기반 UI/UX 구현<br>실시간 대기열 화면 개발<br>좌석 선택 인터페이스 구현 | 백엔드 API 개발<br>결제 시스템 연동<br>Kafka 이벤트 처리<br>인프라 구성 및 배포 |
+| 프로젝트 기획 및 총괄<br>Redis 대기열 시스템 구현<br>JWT 인증 및 보안<br>Rate Limiting | 예매 시스템 개발 (듀얼 트랙)<br>좌석 배정 로직 구현<br>동시성 제어 (분산 락) | 결제 시스템 연동 (PortOne)<br>Kafka 이벤트 처리<br>인프라 구성 |
 
 <br/>
 
 ## 💡 프로젝트 배경
 
 ### 해결하고자 하는 문제
-- 🎫 **불공정한 티켓팅**: 매크로/봇에 의한 티켓 선점으로 일반 소비자의 구매 기회 박탈
-- ⚡ **대용량 트래픽**: 인기 공연 오픈 시 수만 명 동시 접속으로 인한 서버 과부하
-- 🔄 **단일 방식의 한계**: 선착순만 존재하는 기존 시스템의 공정성 문제
-- 💳 **결제 안정성**: 동시 결제 요청에 대한 데이터 정합성 보장 필요
+- ⚡ **트래픽 집중**: 오픈 후 1~2분 내 트래픽의 90%가 집중, 서버 다운·504 에러·결제 중단 발생
+- 🎫 **불공정한 경쟁**: 2024 예스24 실측 기준 매크로 트래픽 73.5%, 정상 사용자 26.5% — "빠른 클릭 = 좋은 자리" 구조는 매크로·고성능 장비에만 유리
+- 🔄 **좌석 선택 vs 확보 확실성 충돌**: 원하는 좌석 선택 또는 확보 확실성 중 하나만 가능한 기존 구조
+- 📋 **대기 불확실성**: 무한 새로고침 → 이탈 → 서버 추가 부하의 악순환
 
 ### 솔루션: 듀얼 트랙 예매 시스템
-- **Lottery Track (추첨)**: 응모 기간 내 신청 → 공정 추첨 → 당첨자 좌석 자동 배정 → 결제
-- **Live Track (선착순)**: Redis 대기열 진입 → 순번 대기 → 좌석 직접 선택 → 결제
+- **Lottery Track (사전 예매)**: 등급 선택 → 결제 → Live Track 마감 후 Fisher-Yates 알고리즘으로 좌석 랜덤 배정 (좌석 확보 확실성 보장, 매크로 무력화)
+- **Live Track (실시간 선착순)**: Redis 대기열 진입 → 순번 대기 → 좌석 직접 선택 → 10분 홀드 → 결제 (좌석 선택권 보장)
 
 <br/>
 
@@ -47,7 +47,8 @@
 | Message Broker | Apache Kafka |
 | Security | Spring Security, JWT (jjwt 0.12) |
 | API Docs | SpringDoc OpenAPI (Swagger) |
-| Monitoring | Spring Actuator, Prometheus |
+| Monitoring | Prometheus, Grafana, Spring Actuator |
+| Load Test | k6 |
 | Infra | Docker Compose |
 | Build | Gradle |
 
@@ -56,26 +57,31 @@
 ## 🏗️ 핵심 구현 기능
 
 ### 🎰 듀얼 트랙 예매 시스템
-- **추첨 트랙 (Lottery Track)**: 응모 접수 → 추첨 → 좌석 자동 배정 → 결제 유도
-- **선착순 트랙 (Live Track)**: Redis Sorted Set 기반 대기열 → 순번별 입장 → 실시간 좌석 선택
+- **Lottery Track (사전 예매)**: 등급 선택 후 사전 결제 → Live Track 마감 후 Fisher-Yates 셔플 알고리즘으로 좌석 랜덤 배정 (1인당 최대 2장, 속도가 아닌 운으로 결정 → 매크로 무력화)
+- **Live Track (실시간 선착순)**: Redis 대기열 진입 → 순번 대기 → 좌석 풀에서 직접 좌석 선택 → 10분 홀드 → 결제 (1인당 최대 4장, 원하는 자리 직접 선택)
 
 ### 📋 Redis 기반 대기열 시스템
-- Redis Sorted Set으로 대기열 순번 관리
-- JWT 기반 대기열 토큰 발급 및 검증
-- 스케줄러 기반 자동 입장 처리 (`QueueScheduler`)
-- Rate Limiting 필터로 API 과부하 방지
+- `ZADD` — Redis Sorted Set으로 대기열 순번 관리
+- `ZRANK` — 3초 Polling으로 실시간 순번 및 예상 대기시간 전달
+- 순번 도달 시 TTL 5분 입장 토큰 발급, 토큰 검증 후 예매 페이지 진입
+- 하트비트 30초 미응답 시 자동 `ZREM` → 이탈 처리
+- 스케줄러 기반 배치 입장 처리 (`QueueScheduler`)
+- Redis 기반 Rate Limiting 필터로 API 과부하 방지
 
-### 💺 좌석 관리 및 동시성 제어
-- Redis Set 기반 좌석 풀(Seat Pool) 관리
-- `SREM` 원자적 연산으로 좌석 선점 동시성 제어
-- 좌석 임시 홀드 + TTL 기반 자동 만료 (`SeatHoldService`)
+### 💺 좌석 관리 및 동시성 제어 (4중 방어)
+1. **Redis 원자적 제거 (`SREM`)**: 좌석 풀에서 선점 시도, 이미 선점된 좌석이면 즉시 예약 거절
+2. **NX 원자적 홀드**: TTL 설정으로 좌석 임시 잠금, 요청 중 단 1명만 홀드 성공
+3. **Redisson 분산 락**: 배치 입장 처리 시 다중 서버 환경에서도 단일 실행 보장
+4. **DB 유니크 제약**: Redis 예외 상황에서도 DB 레벨에서 중복 차단
+- **Fisher-Yates Shuffle Algorithm**: 구역별 좌석 수 차이로 인한 불균등 배정 방지, O(n) 선형 시간 in-place 셔플로 모든 좌석에 동일한 선택 확률 보장
 - 앱 시작 시 좌석 풀 자동 초기화 (`SeatPoolInitializer`)
 
 ### 💳 결제 시스템
-- PortOne V2 연동 결제 처리
-- 결제 타이머 기반 시간 제한 (`PaymentTimerService`)
+- **Lottery Track**: 결제 마감 시각(ticketOpenAt - 15분) 이전까지 결제 완료 필요, 미결제 시 1분마다 자동 취소, 결제 완료 후 Live Track 종료 1시간 뒤 Fisher-Yates로 좌석 배정
+- **Live Track**: 좌석 선점 즉시 10분 홀드 타이머 시작, 시간 내 결제 완료 시 즉시 좌석 SOLD 전환, 미결제 시 1분마다 홀드 자동 해제
+- PortOne API 연동 결제 처리
+- 5분 결제 타이머 기반 시간 제한 (`PaymentTimerService`)
 - 결제 만료 자동 처리 스케줄러 (`PaymentExpiryScheduler`)
-- 결제 검증 스케줄러 (`PaymentVerificationScheduler`)
 - Kafka 기반 환불 비동기 처리 (`RefundConsumer`)
 
 ### 🔐 인증 / 보안
@@ -115,7 +121,7 @@
 ┃ ┃ ┣ 📂 controller
 ┃ ┃ ┣ 📂 dto
 ┃ ┃ ┗ 📂 service
-┃ ┣ 📂 reservation        # 예매 (추첨/선착순 트랙)
+┃ ┣ 📂 reservation        # 예매 (사전 예매/실시간 선착순 트랙)
 ┃ ┃ ┣ 📂 constants
 ┃ ┃ ┣ 📂 controller
 ┃ ┃ ┣ 📂 dto
