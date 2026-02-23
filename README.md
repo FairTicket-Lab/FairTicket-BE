@@ -183,4 +183,4 @@ http://localhost:8080/webjars/swagger-ui/index.html
 ```
 
 ---
-> #### &copy; 2025 FairTicket | Fair Ticketing Platform for Everyone | All Rights Reserved
+> #### &copy; 2026 FairTicket | Fair Ticketing Platform for Everyone | All Rights Reserved
